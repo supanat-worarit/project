@@ -193,7 +193,7 @@ $historyList = $histStmt->fetchAll();
             <?= htmlspecialchars($user['student_id'] ?? $user['user_id']) ?>
           </span>
           <a href="logout.php" onclick="return confirm('ต้องการออกจากระบบหรือไม่?')" class="text-[11px] bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded font-bold transition">
-            ออก
+            ออกจากระบบ
           </a>
         </div>
       </div>
@@ -395,6 +395,7 @@ $historyList = $histStmt->fetchAll();
   </div>
 
   <script>
+    // ซ่อน/แสดงแท็บหลัก และเปลี่ยนชื่อหัวเรื่องด้านบน
     function navigateTab(tabName) {
       document.querySelectorAll('.tab-view').forEach(el => el.classList.add('hidden'));
       document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
@@ -408,6 +409,7 @@ $historyList = $histStmt->fetchAll();
       document.getElementById('app-header-title').innerText = titles[tabName];
     }
 
+    // ฟังก์ชันที่คอยสลับหน้าจอ Step 1, 2, 3 ในขั้นตอนการยืม
     function openBorrowSubList(grp) {
       document.getElementById('sub-eq-name').innerText = grp.eq_name;
       document.getElementById('sub-eq-cat').innerText = grp.category_name || '';
@@ -462,6 +464,7 @@ $historyList = $histStmt->fetchAll();
       document.getElementById('return-list-view').classList.remove('hidden');
     }
 
+    // ฟังก์ชันที่คอยจับว่าถ้าผู้ใช้อัปโหลดรูปแล้ว ให้เปลี่ยนข้อความจาก "ยังไม่ได้เลือกไฟล์" เป็นชื่อไฟล์ที่เลือก เพื่อให้ผู้ใช้มั่นใจว่าแนบรูปติดแล้ว
     function previewBorrowFile(input) {
       if (input.files && input.files[0]) {
         document.getElementById('borrow-file-label').innerText = input.files[0].name;
@@ -474,6 +477,7 @@ $historyList = $histStmt->fetchAll();
       }
     }
 
+    // ใช้จัดการปุ่มฟิลเตอร์ในหน้าประวัติ เพื่อกรองให้แสดงเฉพาะการ์ดที่มีคลาสตรงกับสถานะที่ผู้ใช้ต้องการ
     function filterHistoryCards(type, btn) {
       document.querySelectorAll('.hist-nav').forEach(b => b.className = "hist-nav py-2.5");
       btn.className = "hist-nav py-2.5 bg-[#0022BA] text-white";
