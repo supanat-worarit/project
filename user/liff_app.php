@@ -206,11 +206,14 @@ $historyList = $histStmt->fetchAll();
     <div id="tab-content-borrow" class="tab-view flex-1 flex flex-col <?= $page !== 'borrow' ? 'hidden' : '' ?>">
       <!-- Step 1: รายการหมวดหมู่อุปกรณ์ -->
       <div id="borrow-step-1" class="flex-1 overflow-y-auto">
+        <div class="p-3 bg-gray-50 border-b sticky top-0 z-10">
+          <input type="text" id="search-borrow" onkeyup="searchBorrow()" placeholder="🔍 ค้นหาชื่ออุปกรณ์..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+        </div>
         <div class="divide-y divide-gray-200">
           <?php foreach ($groups as $grp): ?>
-          <div class="p-3 bg-white flex justify-between items-center hover:bg-gray-50 transition">
+          <div class="borrow-group-item p-3 bg-white flex justify-between items-center hover:bg-gray-50 transition">
             <div>
-              <div class="font-bold text-sm text-gray-800"><?= htmlspecialchars($grp['eq_name']) ?></div>
+              <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($grp['eq_name']) ?></div>
               <div class="text-xs text-gray-500"><?= htmlspecialchars($grp['category_name']) ?></div>
             </div>
             <div class="flex items-center space-x-3">
@@ -290,15 +293,22 @@ $historyList = $histStmt->fetchAll();
     <!-- ==================== TAB 2: หน้าคืนอุปกรณ์ ==================== -->
     <div id="tab-content-return" class="tab-view flex-1 flex flex-col <?= $page !== 'return' ? 'hidden' : '' ?>">
       <div id="return-list-view" class="p-3 space-y-2 flex-1 overflow-y-auto">
+        <!-- เพิ่มช่องค้นหา (จะแสดงก็ต่อเมื่อมีของที่ยืมอยู่) -->
+        <?php if (!empty($borrowList)): ?>
+        <div class="sticky top-0 bg-gray-100 pb-2 z-10">
+          <input type="text" id="search-return" onkeyup="searchReturn()" placeholder="🔍 ค้นหาอุปกรณ์ที่ต้องการคืน..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm">
+        </div>
+        <?php endif; ?>
+
         <?php if (empty($borrowList)): ?>
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีรายการอุปกรณ์ที่ค้างคืนในขณะนี้</div>
         <?php else: ?>
           <?php foreach ($borrowList as $bl): 
             $isLate = (strtotime(date('Y-m-d H:i:s')) > strtotime($bl['due_time']));
           ?>
-          <div class="p-3 bg-white border border-gray-200 rounded-xl shadow-sm flex justify-between items-center">
+          <div class="return-item p-3 bg-white border border-gray-200 rounded-xl shadow-sm flex justify-between items-center">
             <div>
-              <div class="font-bold text-sm text-gray-800"><?= htmlspecialchars($bl['eq_name']) ?></div>
+              <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($bl['eq_name']) ?></div>
               <div class="text-xs text-gray-500">รหัส: <?= htmlspecialchars($bl['eq_code']) ?> | กำหนด: <?= date('d/m/Y', strtotime($bl['due_time'])) ?></div>
               <?php if ($isLate): ?>
                 <span class="text-[10px] text-red-600 font-bold">เกินกำหนดส่งคืน</span>
@@ -485,6 +495,37 @@ $historyList = $histStmt->fetchAll();
       document.querySelectorAll('.hist-card').forEach(c => {
         if (type === 'all') c.classList.remove('hidden');
         else c.classList.contains(type) ? c.classList.remove('hidden') : c.classList.add('hidden');
+      });
+    }
+
+    // ฟังก์ชันค้นหาหน้ายืม
+    function searchBorrow() {
+      const input = document.getElementById('search-borrow').value.toLowerCase();
+      const items = document.querySelectorAll('.borrow-group-item');
+      
+      items.forEach(item => {
+        const name = item.querySelector('.eq-name-label').innerText.toLowerCase();
+        // ถ้าชื่อมีคำที่พิมพ์มา ให้แสดง (flex) ถ้าไม่มีให้ซ่อน (none)
+        if (name.includes(input)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+
+    // ฟังก์ชันค้นหาหน้าคืน
+    function searchReturn() {
+      const input = document.getElementById('search-return').value.toLowerCase();
+      const items = document.querySelectorAll('.return-item');
+      
+      items.forEach(item => {
+        const name = item.querySelector('.eq-name-label').innerText.toLowerCase();
+        if (name.includes(input)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
       });
     }
   </script>

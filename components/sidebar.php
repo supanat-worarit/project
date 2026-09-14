@@ -3,7 +3,6 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// ตรวจสอบสิทธิ์ ถ้าไม่ได้ล็อกอินให้เด้งไปหน้า login_ldap.php
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     header("Location: login_ldap.php");
     exit;
@@ -11,6 +10,14 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 $adminName = $_SESSION['admin_name'] ?? 'เจ้าหน้าที่ศูนย์กีฬา';
+
+// ตรวจสอบว่ากำลังเปิดหน้าใดหน้าหนึ่งในกลุ่ม Dashboard หรือไม่
+$isDashboardGroup = in_array($currentPage, [
+    'dashboard.php', 
+    'dashboard_borrows.php', 
+    'overdue.php', 
+    'dashboard_damaged.php'
+]);
 ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,92 +28,157 @@ $adminName = $_SESSION['admin_name'] ?? 'เจ้าหน้าที่ศู
 <style>
     body {
         font-family: 'Prompt', sans-serif;
-        background-color: #f4f6f9;
+        background-color: #f4f7fa;
     }
     .sidebar {
-        width: 250px;
+        width: 270px;
         min-height: 100vh;
-        background-color: #002d62;
+        background-color: #002244;
+        display: flex;
+        flex-direction: column;
     }
     .sidebar .nav-link {
         color: #d1d5db;
         border-radius: 8px;
-        margin: 4px 12px;
-        padding: 10px 16px;
+        margin: 3px 14px;
+        padding: 10px 14px;
         display: flex;
         align-items: center;
         gap: 12px;
         font-size: 14px;
+        transition: all 0.2s;
+        text-decoration: none;
     }
     .sidebar .nav-link:hover {
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: rgba(255, 255, 255, 0.08);
         color: #ffffff;
     }
-    .sidebar .nav-link.active {
+    .sidebar .nav-link.active-main {
         background-color: #0d6efd;
         color: #ffffff;
         font-weight: 500;
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.35);
     }
-    .card-custom {
-        border: none;
-        border-radius: 12px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    .sub-menu {
+        list-style: none;
+        padding-left: 36px;
+        margin: 4px 14px 6px 14px;
     }
-    .modal-box-custom {
-        background: #d4d4d4;
-        border: 2px solid #0056b3;
-        border-radius: 4px;
-        padding: 30px;
+    .sub-menu .nav-link {
+        margin: 2px 0;
+        padding: 7px 12px;
+        font-size: 13px;
+        color: #9ca3af;
+    }
+    .sub-menu .nav-link:hover {
+        color: #ffffff;
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+    .sub-menu .nav-link.active-sub {
+        color: #38bdf8;
+        font-weight: 600;
+        background-color: rgba(56, 189, 248, 0.1);
+    }
+    .brand-box {
+        padding: 24px 16px;
+        text-align: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .admin-avatar {
+        width: 54px;
+        height: 54px;
+        background: rgba(13, 110, 253, 0.15);
+        color: #38bdf8;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        margin-bottom: 10px;
     }
 </style>
 
-<div class="sidebar d-flex flex-column flex-shrink-0 text-white">
-    <div class="p-4 text-center border-bottom border-secondary border-opacity-25">
-        <i class="bi bi-shield-check text-info" style="font-size: 2.5rem;"></i>
-        <h6 class="mt-2 mb-0 fw-bold"><?= htmlspecialchars($adminName) ?></h6>
-        <small class="text-white-50">ม.อ.ตรัง (Admin)</small>
+<div class="sidebar flex-shrink-0 text-white">
+    <div class="brand-box">
+        <div class="admin-avatar">
+            <i class="bi bi-shield-check"></i>
+        </div>
+        <h6 class="mb-0 fw-bold text-white"><?= htmlspecialchars($adminName) ?></h6>
+        <small class="text-white-50" style="font-size: 12px;">เจ้าหน้าที่ศูนย์กีฬา ม.อ.ตรัง</small>
     </div>
     
     <ul class="nav nav-pills flex-column mb-auto mt-3">
+        <!-- Dashboard เมนูหลักพร้อม Dropdown เมนูย่อย 3 หน้า -->
         <li class="nav-item">
-            <a href="dashboard.php" class="nav-link <?= ($currentPage == 'dashboard.php') ? 'active' : ''; ?>">
-                <i class="bi bi-speedometer2"></i> Dashboard
+            <a href="#dashboardSubmenu" data-bs-toggle="collapse" class="nav-link justify-content-between <?= $isDashboardGroup ? 'active-main' : ''; ?>" aria-expanded="<?= $isDashboardGroup ? 'true' : 'false'; ?>">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-speedometer2"></i>
+                    <span>Dashboard ภาพรวม</span>
+                </div>
+                <i class="bi bi-chevron-down small"></i>
+            </a>
+            <div class="collapse <?= $isDashboardGroup ? 'show' : ''; ?>" id="dashboardSubmenu">
+                <ul class="sub-menu">
+                    <li>
+                        <a href="dashboard.php" class="nav-link <?= ($currentPage == 'dashboard.php') ? 'active-sub' : ''; ?>">
+                            <i class="bi bi-pie-chart me-1"></i> ภาพรวม & สถิติ
+                        </a>
+                    </li>
+                    <li>
+                        <a href="dashboard_borrows.php" class="nav-link <?= ($currentPage == 'dashboard_borrows.php') ? 'active-sub' : ''; ?>">
+                            <i class="bi bi-journal-text me-1 text-info"></i> 1. รายการยืมทั้งหมด
+                        </a>
+                    </li>
+                    <li>
+                        <a href="overdue.php" class="nav-link <?= ($currentPage == 'overdue.php') ? 'active-sub' : ''; ?>">
+                            <i class="bi bi-exclamation-triangle me-1 text-warning"></i> 2. ผู้ค้างส่งอุปกรณ์
+                        </a>
+                    </li>
+                    <li>
+                        <a href="dashboard_damaged.php" class="nav-link <?= ($currentPage == 'dashboard_damaged.php') ? 'active-sub' : ''; ?>">
+                            <i class="bi bi-tools me-1 text-danger"></i> 3. อุปกรณ์ที่ชำรุด
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </li>
+
+        <li class="nav-item">
+            <a href="approvals.php" class="nav-link <?= ($currentPage == 'approvals.php') ? 'active-main' : ''; ?>">
+                <i class="bi bi-check2-circle"></i> รายการรออนุมัติ (ยืม-คืน)
             </a>
         </li>
         <li class="nav-item">
-            <a href="categories.php" class="nav-link <?= (in_array($currentPage, ['categories.php', 'equipment.php'])) ? 'active' : ''; ?>">
-                <i class="bi bi-box-seam"></i> จัดการสต็อกอุปกรณ์
+            <a href="categories.php" class="nav-link <?= (in_array($currentPage, ['categories.php', 'equipment.php'])) ? 'active-main' : ''; ?>">
+                <i class="bi bi-boxes"></i> จัดการประเภท & อุปกรณ์
             </a>
         </li>
         <li class="nav-item">
-            <a href="users.php" class="nav-link <?= ($currentPage == 'users.php') ? 'active' : ''; ?>">
-                <i class="bi bi-people"></i> จัดการสิทธิ์ผู้ใช้
+            <a href="users.php" class="nav-link <?= ($currentPage == 'users.php') ? 'active-main' : ''; ?>">
+                <i class="bi bi-people"></i> จัดการสิทธิ์ & ข้อมูลนักศึกษา
             </a>
         </li>
     </ul>
 
-    <div class="p-3 border-top border-secondary border-opacity-25">
+    <div class="p-3 border-top border-white border-opacity-10">
         <button type="button" class="btn btn-outline-light btn-sm w-100 d-flex align-items-center justify-content-center gap-2" onclick="openLogoutModal()">
             <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
         </button>
     </div>
 </div>
 
-<!-- Modal ยืนยันการออกจากระบบ -->
+<!-- Logout Modal -->
 <div class="modal fade" id="logoutConfirmModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content modal-box-custom text-center text-dark">
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content text-center p-4 border-0 shadow" style="border-radius: 16px;">
+            <div class="mb-2">
+                <i class="bi bi-question-circle text-primary" style="font-size: 2.8rem;"></i>
             </div>
-            <div class="mb-3">
-                <i class="bi bi-exclamation-circle text-primary" style="font-size: 3rem;"></i>
-            </div>
-            <h5 class="fw-bold mb-2">ยืนยันการออกจากระบบ</h5>
-            <p class="text-muted mb-4">คุณต้องการออกจากระบบจัดการศูนย์กีฬา ใช่หรือไม่?</p>
-            <div class="d-flex justify-content-center gap-3">
-                <a href="logout.php" class="btn btn-primary px-4 fw-bold">ยืนยัน</a>
-                <button type="button" class="btn btn-secondary px-4 fw-bold" data-bs-dismiss="modal">ยกเลิก</button>
+            <h6 class="fw-bold mb-2 text-dark">ยืนยันการออกจากระบบ?</h6>
+            <p class="text-muted small mb-4">คุณต้องการออกจากระบบจัดการศูนย์กีฬา ใช่หรือไม่</p>
+            <div class="d-flex justify-content-center gap-2">
+                <a href="logout.php" class="btn btn-primary btn-sm px-3 fw-medium">ยืนยัน</a>
+                <button type="button" class="btn btn-light btn-sm px-3 fw-medium" data-bs-dismiss="modal">ยกเลิก</button>
             </div>
         </div>
     </div>
@@ -114,14 +186,6 @@ $adminName = $_SESSION['admin_name'] ?? 'เจ้าหน้าที่ศู
 
 <script>
 function openLogoutModal() {
-    const modalEl = document.getElementById('logoutConfirmModal');
-    if (typeof bootstrap !== 'undefined') {
-        const myModal = new bootstrap.Modal(modalEl);
-        myModal.show();
-    } else {
-        if (confirm('คุณต้องการออกจากระบบจัดการศูนย์กีฬา ใช่หรือไม่?')) {
-            window.location.href = 'logout.php';
-        }
-    }
+    new bootstrap.Modal(document.getElementById('logoutConfirmModal')).show();
 }
 </script>
