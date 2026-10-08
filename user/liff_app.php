@@ -1,22 +1,17 @@
 <?php
-// liff_app.php - รวมหน้ายืม คืน ประวัติ (เลือกวันที่ยืม-คืนได้อิสระ + แนบรูปถ่าย)
+// user/liff_app.php - รวมหน้ายืม คืน ประวัติ
 session_start();
 require_once __DIR__ . '../../config/db.php';
+require_once __DIR__ . '../../config/settings.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: register.php");
+    header("Location: login_user.php");
     exit;
 }
 
 try {
-    $pdo->exec("
-        UPDATE `transactions` 
-        SET `trans_status` = 'overdue' 
-        WHERE `trans_status` = 'borrowed' 
-          AND `due_time` < NOW()
-    ");
-} catch (Exception $e) {
-}
+    $pdo->exec("UPDATE `transactions` SET `trans_status` = 'overdue' WHERE `trans_status` = 'borrowed' AND `due_time` < NOW()");
+} catch (Exception $e) {}
 
 $userId = (int)$_SESSION['user_id'];
 $page = $_GET['page'] ?? 'borrow';
@@ -32,50 +27,46 @@ $uStmt = $pdo->prepare("SELECT * FROM `user` WHERE user_id = ? LIMIT 1");
 $uStmt->execute([$userId]);
 $user = $uStmt->fetch() ?: [
     'full_name'  => $_SESSION['full_name'] ?? 'นักศึกษา',
-    'student_id' => $_SESSION['student_id'] ?? '6410210555'
+    'student_id' => $_SESSION['student_id'] ?? '-'
 ];
 
-// 2. จัดการบันทึกการยืม (รับค่าจาก Date Picker ที่ผู้ใช้เลือก)
+// 2. จัดการส่งคำขอยืม
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'borrow') {
     $eqId = (int)$_POST['eq_id'];
-    
-    // ดึงวันที่ที่เลือกมาจากฟอร์ม (ถ้าไม่ได้เลือก ใช้วันที่ปัจจุบัน)
     $bDate = !empty($_POST['borrow_date']) ? $_POST['borrow_date'] : date('Y-m-d');
     $dDate = !empty($_POST['due_date'])    ? $_POST['due_date']    : date('Y-m-d', strtotime('+3 days'));
-    
-    $borrowTime  = $bDate . ' ' . date('H:i:s');
-    $dueTime     = $dDate . ' 23:59:59';
     $borrowImage = 'default_borrow.jpg';
 
-    // จัดการอัปโหลดรูปภาพบัตรนักศึกษา
     if (isset($_FILES['borrow_image']) && $_FILES['borrow_image']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['borrow_image']['name'], PATHINFO_EXTENSION);
-        $newFileName = 'borrow_' . time() . '_' . rand(100, 999) . '.' . $ext;
+        $newFileName = 'req_borrow_' . time() . '_' . rand(100, 999) . '.' . $ext;
         if (move_uploaded_file($_FILES['borrow_image']['tmp_name'], $uploadDir . $newFileName)) {
             $borrowImage = $newFileName;
         }
     }
 
     try {
-        $chk = $pdo->prepare("SELECT status FROM `sport_equipment` WHERE eq_id = ?");
+        $chk = $pdo->prepare("SELECT status, eq_code FROM `sport_equipment` WHERE eq_id = ? FOR UPDATE");
         $chk->execute([$eqId]);
         $currEq = $chk->fetch();
 
         if (!$currEq || $currEq['status'] !== 'avaliable') {
-            echo "<script>alert('ขออภัย อุปกรณ์ชิ้นนี้ถูกยืมไปแล้ว'); window.location.href='liff_app.php?page=borrow';</script>";
+            echo "<script>alert('ขออภัย อุปกรณ์ชิ้นนี้ถูกยืมไปแล้ว หรือไม่พร้อมใช้งาน'); window.location.href='liff_app.php?page=borrow';</script>";
             exit;
         }
 
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("
-            INSERT INTO `transactions` (eq_id, user_id, borrow_time, due_time, borrow_image, trans_status, analyze_damaged_status) 
-            VALUES (?, ?, ?, ?, ?, 'borrowed', 'normal')
+            INSERT INTO `approval_requests` (user_id, eq_id, req_type, evidence_image, borrow_date, due_date, status) 
+            VALUES (?, ?, 'borrow', ?, ?, ?, 'pending')
         ");
-        $stmt->execute([$eqId, $userId, $borrowTime, $dueTime, $borrowImage]);
-        $pdo->prepare("UPDATE `sport_equipment` SET status = 'borrowed' WHERE eq_id = ?")->execute([$eqId]);
+        $stmt->execute([$userId, $eqId, $borrowImage, $bDate, $dDate]);
+        
+        // ล็อกสถานะอุปกรณ์เพื่อไม่ให้คนอื่นกดซ้ำระหว่างรออนุมัติ
+        $pdo->prepare("UPDATE `sport_equipment` SET status = 'maintenance' WHERE eq_id = ?")->execute([$eqId]);
         $pdo->commit();
 
-        echo "<script>alert('บันทึกการยืมสำเร็จเรียบร้อย!'); window.location.href='liff_app.php?page=borrow';</script>";
+        echo "<script>alert('ส่งคำขอยืมเรียบร้อย กรุณารอเจ้าหน้าที่อนุมัติ'); window.location.href='liff_app.php?page=borrow';</script>";
         exit;
     } catch (Exception $e) {
         $pdo->rollBack();
@@ -83,15 +74,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// 3. จัดการบันทึกการคืน (พร้อมรูปภาพสภาพอุปกรณ์)
+// 3. จัดการส่งคำขอคืน
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'return') {
     $transId     = (int)$_POST['trans_id'];
-    $returnTime  = date('Y-m-d H:i:s');
     $returnImage = 'default_return.jpg';
 
     if (isset($_FILES['return_image']) && $_FILES['return_image']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['return_image']['name'], PATHINFO_EXTENSION);
-        $newFileName = 'return_' . time() . '_' . rand(100, 999) . '.' . $ext;
+        $newFileName = 'req_return_' . time() . '_' . rand(100, 999) . '.' . $ext;
         if (move_uploaded_file($_FILES['return_image']['tmp_name'], $uploadDir . $newFileName)) {
             $returnImage = $newFileName;
         }
@@ -102,26 +92,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $tStmt->execute([$transId, $userId]);
         $trans = $tStmt->fetch();
 
-        if ($trans && $trans['trans_status'] !== 'returned') {
+        if ($trans && in_array($trans['trans_status'], ['borrowed', 'overdue'])) {
             $pdo->beginTransaction();
-            $isOverdue = strtotime($returnTime) > strtotime($trans['due_time']);
-            $newStatus = $isOverdue ? 'overdue' : 'returned';
+            
+            $stmt = $pdo->prepare("
+                INSERT INTO `approval_requests` (user_id, eq_id, trans_id, req_type, evidence_image, status) 
+                VALUES (?, ?, ?, 'return', ?, 'pending')
+            ");
+            $stmt->execute([$userId, $trans['eq_id'], $transId, $returnImage]);
 
-            $upd = $pdo->prepare("UPDATE `transactions` SET return_time = ?, return_image = ?, trans_status = ? WHERE trans_id = ?");
-            $upd->execute([$returnTime, $returnImage, $newStatus, $transId]);
-
-            $pdo->prepare("UPDATE `sport_equipment` SET status = 'avaliable' WHERE eq_id = ?")->execute([$trans['eq_id']]);
-
-            if ($isOverdue) {
-                $daysOver = max(1, ceil((strtotime($returnTime) - strtotime($trans['due_time'])) / 86400));
-                $fineAmount = $daysOver * 20.00;
-                $insFine = $pdo->prepare("INSERT INTO `equipment_fines` (fine_id, trans_id, price, payment_status, slipok_status) VALUES (?, ?, ?, 'unpaid', 'pending')");
-                $insFine->execute([$fineId, $transId, $fineAmount]);
-            }
-
+            // เปลี่ยนสถานะ transactions เป็นรอตรวจสอบเพื่อไม่ให้กดคืนซ้ำได้
+            $pdo->prepare("UPDATE `transactions` SET trans_status = 'pending_return' WHERE trans_id = ?")->execute([$transId]);
             $pdo->commit();
-            $msg = $isOverdue ? "คืนเกินกำหนด มีค่าปรับ " . number_format($fineAmount, 0) . " บาท" : "คืนอุปกรณ์สำเร็จเรียบร้อย!";
-            echo "<script>alert('{$msg}'); window.location.href='liff_app.php?page=return';</script>";
+            
+            echo "<script>alert('ส่งคำขอคืนเรียบร้อย รอแอดมินตรวจสอบสภาพอุปกรณ์'); window.location.href='liff_app.php?page=return';</script>";
             exit;
         }
     } catch (Exception $e) {
@@ -171,7 +155,7 @@ $histStmt = $pdo->prepare("
     ORDER BY t.trans_id DESC
 ");
 $histStmt->execute([$userId]);
-$historyList = $histStmt->fetchAll();
+$historyList =$histStmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -204,17 +188,15 @@ $historyList = $histStmt->fetchAll();
 
     <!-- ==================== TAB 1: หน้ายืมอุปกรณ์ ==================== -->
     <div id="tab-content-borrow" class="tab-view flex-1 flex flex-col <?= $page !== 'borrow' ? 'hidden' : '' ?>">
-      <!-- Step 1: รายการหมวดหมู่อุปกรณ์ -->
       <div id="borrow-step-1" class="flex-1 overflow-y-auto">
         <div class="p-3 bg-gray-50 border-b sticky top-0 z-10">
           <input type="text" id="search-borrow" onkeyup="searchBorrow()" placeholder="🔍 ค้นหาชื่ออุปกรณ์..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
         </div>
         <div class="divide-y divide-gray-200">
-          <?php foreach ($groups as $grp): ?>
+          <?php foreach ($groups as$grp): ?>
           <div class="borrow-group-item p-3 bg-white flex justify-between items-center hover:bg-gray-50 transition">
             <div>
-              <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($grp['eq_name']) ?></div>
-              <div class="text-xs text-gray-500"><?= htmlspecialchars($grp['category_name']) ?></div>
+              <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($grp['category_name']) ?></div>
             </div>
             <div class="flex items-center space-x-3">
               <span class="text-xs text-gray-600">จำนวน <?= $grp['total'] ?></span>
@@ -225,19 +207,16 @@ $historyList = $histStmt->fetchAll();
         </div>
       </div>
 
-      <!-- Step 2: รายการย่อยตามรหัสชิ้น -->
       <div id="borrow-step-2" class="hidden flex-1 overflow-y-auto">
         <div class="p-3 bg-gray-200 flex justify-between items-center border-b">
           <div>
             <div class="font-bold text-sm text-gray-800" id="sub-eq-name">ชื่ออุปกรณ์</div>
-            <div class="text-xs text-gray-600" id="sub-eq-cat">หมวดหมู่</div>
           </div>
           <button onclick="backToBorrow1()" class="text-xs text-blue-800 font-bold hover:underline">❮ กลับ</button>
         </div>
         <div id="sub-eq-items" class="divide-y divide-gray-200 bg-white"></div>
       </div>
 
-      <!-- Step 3: ฟอร์มยืนยันการยืม (เลือกวันที่ได้อิสระ) -->
       <div id="borrow-step-3" class="hidden flex-1 p-4 flex flex-col justify-between">
         <form method="POST" action="liff_app.php?page=borrow" enctype="multipart/form-data" class="h-full flex flex-col justify-between">
           <input type="hidden" name="action" value="borrow">
@@ -246,28 +225,14 @@ $historyList = $histStmt->fetchAll();
           <div class="bg-gray-200 p-4 rounded-xl shadow-inner space-y-3">
             <div class="text-center font-bold text-sm text-gray-800" id="borrow-selected-title">อุปกรณ์ที่เลือก</div>
             
-            <!-- ช่องเลือกวันที่ยืม (เปิดให้กดปฏิทินเลือกได้) -->
             <div>
               <label class="block text-xs font-semibold text-gray-700 mb-1">วันที่ยืม 🗓️</label>
-              <input 
-                type="date" 
-                name="borrow_date" 
-                id="borrow-date-input" 
-                value="<?= date('Y-m-d') ?>" 
-                class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-              >
+              <input type="date" name="borrow_date" id="borrow-date-input" value="<?= date('Y-m-d') ?>" class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
             </div>
 
-            <!-- ช่องเลือกกำหนดคืน (เปิดให้กดปฏิทินเลือกได้) -->
             <div>
               <label class="block text-xs font-semibold text-gray-700 mb-1">กำหนดส่งคืน 📅</label>
-              <input 
-                type="date" 
-                name="due_date" 
-                id="due-date-input" 
-                value="<?= date('Y-m-d', strtotime('+3 days')) ?>" 
-                class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-              >
+              <input type="date" name="due_date" id="due-date-input" value="<?= date('Y-m-d', strtotime('+3 days')) ?>" class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
             </div>
 
             <div>
@@ -275,7 +240,7 @@ $historyList = $histStmt->fetchAll();
               <div class="flex border border-gray-400 bg-white rounded overflow-hidden">
                 <label class="bg-gray-300 border-r border-gray-400 text-xs px-3 py-2 cursor-pointer hover:bg-gray-400 font-semibold flex-shrink-0">
                   เลือกไฟล์
-                  <input type="file" name="borrow_image" accept="image/*" class="hidden" onchange="previewBorrowFile(this)">
+                  <input type="file" name="borrow_image" accept="image/*" required class="hidden" onchange="previewBorrowFile(this)">
                 </label>
                 <span id="borrow-file-label" class="text-[11px] text-gray-500 p-2 truncate">ยังไม่ได้เลือกไฟล์</span>
               </div>
@@ -283,7 +248,7 @@ $historyList = $histStmt->fetchAll();
           </div>
 
           <div class="space-y-2 mt-4">
-            <button type="submit" class="w-full bg-[#0022BA] hover:bg-blue-900 text-white py-2.5 rounded text-sm font-bold shadow transition">ยืนยันการยืม</button>
+            <button type="submit" class="w-full bg-[#0022BA] hover:bg-blue-900 text-white py-2.5 rounded text-sm font-bold shadow transition">ส่งคำขอยืม</button>
             <button type="button" onclick="backToBorrow2()" class="w-full bg-gray-300 text-gray-700 py-2 rounded text-xs font-bold transition">ย้อนกลับ</button>
           </div>
         </form>
@@ -293,7 +258,6 @@ $historyList = $histStmt->fetchAll();
     <!-- ==================== TAB 2: หน้าคืนอุปกรณ์ ==================== -->
     <div id="tab-content-return" class="tab-view flex-1 flex flex-col <?= $page !== 'return' ? 'hidden' : '' ?>">
       <div id="return-list-view" class="p-3 space-y-2 flex-1 overflow-y-auto">
-        <!-- เพิ่มช่องค้นหา (จะแสดงก็ต่อเมื่อมีของที่ยืมอยู่) -->
         <?php if (!empty($borrowList)): ?>
         <div class="sticky top-0 bg-gray-100 pb-2 z-10">
           <input type="text" id="search-return" onkeyup="searchReturn()" placeholder="🔍 ค้นหาอุปกรณ์ที่ต้องการคืน..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm">
@@ -303,13 +267,13 @@ $historyList = $histStmt->fetchAll();
         <?php if (empty($borrowList)): ?>
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีรายการอุปกรณ์ที่ค้างคืนในขณะนี้</div>
         <?php else: ?>
-          <?php foreach ($borrowList as $bl): 
+          <?php foreach ($borrowList as$bl): 
             $isLate = (strtotime(date('Y-m-d H:i:s')) > strtotime($bl['due_time']));
           ?>
           <div class="return-item p-3 bg-white border border-gray-200 rounded-xl shadow-sm flex justify-between items-center">
             <div>
               <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($bl['eq_name']) ?></div>
-              <div class="text-xs text-gray-500">รหัส: <?= htmlspecialchars($bl['eq_code']) ?> | กำหนด: <?= date('d/m/Y', strtotime($bl['due_time'])) ?></div>
+              <div class="text-xs text-gray-500">รหัส: <?= htmlspecialchars($bl['eq_code']) ?> กำหนดคืน: <?= date('d/m/Y', strtotime($bl['due_time'])) ?></div>
               <?php if ($isLate): ?>
                 <span class="text-[10px] text-red-600 font-bold">เกินกำหนดส่งคืน</span>
               <?php endif; ?>
@@ -320,7 +284,6 @@ $historyList = $histStmt->fetchAll();
         <?php endif; ?>
       </div>
 
-      <!-- ฟอร์มยืนยันคืนพร้อมช่องอัปโหลดรูปภาพ -->
       <div id="return-confirm-view" class="hidden p-4 flex-1 flex flex-col justify-between">
         <form method="POST" action="liff_app.php?page=return" enctype="multipart/form-data" class="h-full flex flex-col justify-between">
           <input type="hidden" name="action" value="return">
@@ -329,11 +292,11 @@ $historyList = $histStmt->fetchAll();
           <div class="bg-gray-200 p-4 rounded-xl shadow-inner space-y-3">
             <div class="text-center font-bold text-sm text-gray-800" id="return-selected-title">คืนอุปกรณ์</div>
             <div>
-              <label class="block text-xs font-semibold text-gray-700 mb-1">ถ่ายรูปสภาพอุปกรณ์ที่ส่งคืน (Vision AI) 🖼️</label>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">ถ่ายรูปสภาพอุปกรณ์ที่ส่งคืน</label>
               <div class="flex border border-gray-400 bg-white rounded overflow-hidden">
                 <label class="bg-gray-300 border-r border-gray-400 text-xs px-3 py-2 cursor-pointer hover:bg-gray-400 font-semibold flex-shrink-0">
                   ถ่ายภาพ / เลือกรูป
-                  <input type="file" name="return_image" accept="image/*" class="hidden" onchange="previewReturnFile(this)">
+                  <input type="file" name="return_image" accept="image/*" required class="hidden" onchange="previewReturnFile(this)">
                 </label>
                 <span id="return-file-label" class="text-[11px] text-gray-500 p-2 truncate">ยังไม่ได้เลือกรูปถ่าย</span>
               </div>
@@ -342,7 +305,7 @@ $historyList = $histStmt->fetchAll();
           </div>
 
           <div class="space-y-2 mt-4">
-            <button type="submit" class="w-full bg-[#B71C1C] hover:bg-red-800 text-white py-2.5 rounded text-sm font-bold shadow transition">ยืนยันการคืน</button>
+            <button type="submit" class="w-full bg-[#B71C1C] hover:bg-red-800 text-white py-2.5 rounded text-sm font-bold shadow transition">ส่งคำขอคืน</button>
             <button type="button" onclick="cancelReturnConfirm()" class="w-full bg-gray-300 text-gray-700 py-2 rounded text-xs font-bold transition">ยกเลิก</button>
           </div>
         </form>
@@ -362,16 +325,16 @@ $historyList = $histStmt->fetchAll();
         <?php if (empty($historyList)): ?>
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีประวัติการทำรายการ</div>
         <?php else: ?>
-          <?php foreach ($historyList as $h): 
-            $isOver = ($h['trans_status'] === 'overdue' || ($h['payment_status'] && $h['payment_status'] === 'unpaid'));
+          <?php foreach ($historyList as$h): 
+            $isOver = ($h['trans_status'] === 'overdue' || ($h['payment_status'] &&$h['payment_status'] === 'unpaid'));
             $isRet = ($h['trans_status'] === 'returned');
-            $typeClass = $isOver ? 'overdue border-red-500 bg-red-50' : ($isRet ? 'returned border-green-500 bg-green-50' : 'borrowed border-blue-600 bg-blue-50');
+            $typeClass =$isOver ? 'overdue border-red-500 bg-red-50' : ($isRet ? 'returned border-green-500 bg-green-50' : 'borrowed border-blue-600 bg-blue-50');
           ?>
           <div class="hist-card <?= $typeClass ?> border-2 rounded-xl p-3 shadow-sm text-xs relative">
             <div class="flex justify-between items-start">
               <div>
                 <h4 class="font-bold text-gray-800"><?= htmlspecialchars($h['eq_name']) ?> (<?= htmlspecialchars($h['eq_code']) ?>)</h4>
-                <p class="text-[10px] text-gray-500 mt-0.5">ยืม: <?= date('d/m/Y', strtotime($h['borrow_time'])) ?> | กำหนด: <?= date('d/m/Y', strtotime($h['due_time'])) ?></p>
+                <p class="text-[10px] text-gray-500 mt-0.5">วันที่ยืม: <?= date('d/m/Y', strtotime($h['borrow_time'])) ?> วันที่คืน: <?= date('d/m/Y', strtotime($h['return_time'])) ?> วันกำหนดคืน: <?= date('d/m/Y', strtotime($h['due_time'])) ?></p>
                 <?php if ($isOver): ?>
                   <p class="text-xs font-bold text-red-600 mt-1">ค่าปรับ: <?= number_format($h['fine_price'] ?? 20, 0) ?> บาท</p>
                 <?php endif; ?>
@@ -386,46 +349,35 @@ $historyList = $histStmt->fetchAll();
       </div>
     </div>
 
-    <!-- แถบเมนูด้านล่าง (Bottom Navbar) -->
+    <!-- Bottom Navbar -->
     <div class="fixed bottom-0 w-full max-w-sm bg-white border-t border-gray-300 grid grid-cols-3 text-center text-xs py-2 shadow-lg">
       <button onclick="navigateTab('borrow')" id="nav-btn-borrow" class="flex flex-col items-center <?= $page === 'borrow' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>">
-        <span class="text-base">📦</span>
-        <span>ยืมอุปกรณ์</span>
+        <span class="text-base">📦</span><span>ยืมอุปกรณ์</span>
       </button>
       <button onclick="navigateTab('return')" id="nav-btn-return" class="flex flex-col items-center <?= $page === 'return' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>">
-        <span class="text-base">🔄</span>
-        <span>คืนอุปกรณ์</span>
+        <span class="text-base">🔄</span><span>คืนอุปกรณ์</span>
       </button>
       <button onclick="navigateTab('history')" id="nav-btn-history" class="flex flex-col items-center <?= $page === 'history' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>">
-        <span class="text-base">📋</span>
-        <span>ประวัติการยืม</span>
+        <span class="text-base">📋</span><span>ประวัติการยืม</span>
       </button>
     </div>
 
   </div>
 
   <script>
-    // ซ่อน/แสดงแท็บหลัก และเปลี่ยนชื่อหัวเรื่องด้านบน
     function navigateTab(tabName) {
       document.querySelectorAll('.tab-view').forEach(el => el.classList.add('hidden'));
       document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
-
-      document.querySelectorAll('div.fixed button').forEach(b => {
-        b.className = "flex flex-col items-center text-gray-500";
-      });
+      document.querySelectorAll('div.fixed button').forEach(b => b.className = "flex flex-col items-center text-gray-500");
       document.getElementById(`nav-btn-${tabName}`).className = "flex flex-col items-center text-blue-700 font-bold";
-      
       const titles = { borrow: '📦 ยืมอุปกรณ์กีฬา', return: '🔄 คืนอุปกรณ์', history: '📋 ประวัติการยืม-คืน' };
       document.getElementById('app-header-title').innerText = titles[tabName];
     }
 
-    // ฟังก์ชันที่คอยสลับหน้าจอ Step 1, 2, 3 ในขั้นตอนการยืม
     function openBorrowSubList(grp) {
       document.getElementById('sub-eq-name').innerText = grp.eq_name;
-      document.getElementById('sub-eq-cat').innerText = grp.category_name || '';
       const list = document.getElementById('sub-eq-items');
       list.innerHTML = '';
-
       grp.items.forEach(it => {
         const isAvail = (it.status === 'avaliable');
         list.insertAdjacentHTML('beforeend', `
@@ -445,22 +397,14 @@ $historyList = $histStmt->fetchAll();
       document.getElementById('borrow-step-2').classList.remove('hidden');
     }
 
-    function backToBorrow1() {
-      document.getElementById('borrow-step-2').classList.add('hidden');
-      document.getElementById('borrow-step-1').classList.remove('hidden');
-    }
-
+    function backToBorrow1() { document.getElementById('borrow-step-2').classList.add('hidden'); document.getElementById('borrow-step-1').classList.remove('hidden'); }
     function openBorrowConfirm(eqId, name, code) {
       document.getElementById('borrow-form-eq-id').value = eqId;
       document.getElementById('borrow-selected-title').innerHTML = `${name}<br><span class="text-blue-800 font-bold">${code}</span>`;
       document.getElementById('borrow-step-2').classList.add('hidden');
       document.getElementById('borrow-step-3').classList.remove('hidden');
     }
-
-    function backToBorrow2() {
-      document.getElementById('borrow-step-3').classList.add('hidden');
-      document.getElementById('borrow-step-2').classList.remove('hidden');
-    }
+    function backToBorrow2() { document.getElementById('borrow-step-3').classList.add('hidden'); document.getElementById('borrow-step-2').classList.remove('hidden'); }
 
     function openReturnConfirm(transId, name, code) {
       document.getElementById('return-form-trans-id').value = transId;
@@ -468,64 +412,31 @@ $historyList = $histStmt->fetchAll();
       document.getElementById('return-list-view').classList.add('hidden');
       document.getElementById('return-confirm-view').classList.remove('hidden');
     }
+    function cancelReturnConfirm() { document.getElementById('return-confirm-view').classList.add('hidden'); document.getElementById('return-list-view').classList.remove('hidden'); }
 
-    function cancelReturnConfirm() {
-      document.getElementById('return-confirm-view').classList.add('hidden');
-      document.getElementById('return-list-view').classList.remove('hidden');
-    }
+    function previewBorrowFile(input) { if (input.files && input.files[0]) document.getElementById('borrow-file-label').innerText = input.files[0].name; }
+    function previewReturnFile(input) { if (input.files && input.files[0]) document.getElementById('return-file-label').innerText = input.files[0].name; }
 
-    // ฟังก์ชันที่คอยจับว่าถ้าผู้ใช้อัปโหลดรูปแล้ว ให้เปลี่ยนข้อความจาก "ยังไม่ได้เลือกไฟล์" เป็นชื่อไฟล์ที่เลือก เพื่อให้ผู้ใช้มั่นใจว่าแนบรูปติดแล้ว
-    function previewBorrowFile(input) {
-      if (input.files && input.files[0]) {
-        document.getElementById('borrow-file-label').innerText = input.files[0].name;
-      }
-    }
-
-    function previewReturnFile(input) {
-      if (input.files && input.files[0]) {
-        document.getElementById('return-file-label').innerText = input.files[0].name;
-      }
-    }
-
-    // ใช้จัดการปุ่มฟิลเตอร์ในหน้าประวัติ เพื่อกรองให้แสดงเฉพาะการ์ดที่มีคลาสตรงกับสถานะที่ผู้ใช้ต้องการ
     function filterHistoryCards(type, btn) {
       document.querySelectorAll('.hist-nav').forEach(b => b.className = "hist-nav py-2.5");
       btn.className = "hist-nav py-2.5 bg-[#0022BA] text-white";
-
       document.querySelectorAll('.hist-card').forEach(c => {
         if (type === 'all') c.classList.remove('hidden');
         else c.classList.contains(type) ? c.classList.remove('hidden') : c.classList.add('hidden');
       });
     }
 
-    // ฟังก์ชันค้นหาหน้ายืม
     function searchBorrow() {
       const input = document.getElementById('search-borrow').value.toLowerCase();
-      const items = document.querySelectorAll('.borrow-group-item');
-      
-      items.forEach(item => {
-        const name = item.querySelector('.eq-name-label').innerText.toLowerCase();
-        // ถ้าชื่อมีคำที่พิมพ์มา ให้แสดง (flex) ถ้าไม่มีให้ซ่อน (none)
-        if (name.includes(input)) {
-          item.style.display = 'flex';
-        } else {
-          item.style.display = 'none';
-        }
+      document.querySelectorAll('.borrow-group-item').forEach(item => {
+        item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none';
       });
     }
 
-    // ฟังก์ชันค้นหาหน้าคืน
     function searchReturn() {
       const input = document.getElementById('search-return').value.toLowerCase();
-      const items = document.querySelectorAll('.return-item');
-      
-      items.forEach(item => {
-        const name = item.querySelector('.eq-name-label').innerText.toLowerCase();
-        if (name.includes(input)) {
-          item.style.display = 'flex';
-        } else {
-          item.style.display = 'none';
-        }
+      document.querySelectorAll('.return-item').forEach(item => {
+        item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none';
       });
     }
   </script>

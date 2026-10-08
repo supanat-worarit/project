@@ -1,5 +1,5 @@
 <?php
-// logout.php - ออกจากระบบ
+// user/logout.php
 session_start();
 
 unset($_SESSION['user_id']);
@@ -9,7 +9,7 @@ unset($_SESSION['role']);
 
 echo "<script>
     alert('ออกจากระบบเรียบร้อยแล้ว');
-    window.location.href = 'register.php';
+    window.location.href = 'login_user.php';
 </script>";
 exit;
 ?>

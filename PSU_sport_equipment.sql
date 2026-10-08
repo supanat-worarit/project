@@ -19,6 +19,30 @@
 CREATE DATABASE IF NOT EXISTS `psu sport equipment` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci */;
 USE `psu sport equipment`;
 
+-- Dumping structure for table psu sport equipment.approval_requests
+CREATE TABLE IF NOT EXISTS `approval_requests` (
+  `req_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `eq_id` int(11) NOT NULL,
+  `trans_id` int(11) DEFAULT NULL,
+  `req_type` enum('borrow','return') NOT NULL,
+  `evidence_image` varchar(255) NOT NULL,
+  `borrow_date` date DEFAULT NULL,
+  `due_date` date DEFAULT NULL,
+  `req_datetime` datetime NOT NULL DEFAULT current_timestamp(),
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `reject_reason` text DEFAULT NULL,
+  `approve_by` int(11) DEFAULT NULL,
+  `approve_datetime` datetime DEFAULT NULL,
+  PRIMARY KEY (`req_id`),
+  KEY `user_id` (`user_id`),
+  KEY `eq_id` (`eq_id`),
+  CONSTRAINT `approval_requests_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON UPDATE CASCADE,
+  CONSTRAINT `approval_requests_ibfk_2` FOREIGN KEY (`eq_id`) REFERENCES `sport_equipment` (`eq_id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Dumping data for table psu sport equipment.approval_requests: ~0 rows (approximately)
+
 -- Dumping structure for table psu sport equipment.equipment_fines
 CREATE TABLE IF NOT EXISTS `equipment_fines` (
   `fine_id` int(11) NOT NULL AUTO_INCREMENT,
@@ -31,14 +55,9 @@ CREATE TABLE IF NOT EXISTS `equipment_fines` (
   PRIMARY KEY (`fine_id`),
   KEY `trans_id` (`trans_id`),
   CONSTRAINT `trans_id` FOREIGN KEY (`trans_id`) REFERENCES `transactions` (`trans_id`) ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Dumping data for table psu sport equipment.equipment_fines: ~3 rows (approximately)
-INSERT INTO `equipment_fines` (`fine_id`, `trans_id`, `price`, `slip_img`, `payment_status`, `slipok_status`, `paid_time`) VALUES
-	(1, 15, 20.00, NULL, 'paid', 'verified', NULL),
-	(2, 18, 60.00, NULL, 'paid', 'verified', NULL),
-	(3, 19, 60.00, NULL, 'paid', 'verified', NULL),
-	(4, 20, 40.00, NULL, 'unpaid', 'pending', NULL);
+-- Dumping data for table psu sport equipment.equipment_fines: ~0 rows (approximately)
 
 -- Dumping structure for table psu sport equipment.image_equipment
 CREATE TABLE IF NOT EXISTS `image_equipment` (
@@ -50,7 +69,7 @@ CREATE TABLE IF NOT EXISTS `image_equipment` (
   CONSTRAINT `eq_id2` FOREIGN KEY (`eq_id`) REFERENCES `sport_equipment` (`eq_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Dumping data for table psu sport equipment.image_equipment: ~24 rows (approximately)
+-- Dumping data for table psu sport equipment.image_equipment: ~27 rows (approximately)
 INSERT INTO `image_equipment` (`image_id`, `image_path`, `eq_id`) VALUES
 	(1, 'uploads/equipments/1787579511_0_d15f82d7-5dd9-444c-a56b-5da80d5f2eab.jfif', 1),
 	(2, 'uploads/equipments/1787579511_1_646224b6-8a14-45b6-b6de-365ad7b40528.jfif', 1),
@@ -107,14 +126,14 @@ CREATE TABLE IF NOT EXISTS `sport_equipment` (
   CONSTRAINT `category_id` FOREIGN KEY (`category_id`) REFERENCES `sport_categories` (`category_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Dumping data for table psu sport equipment.sport_equipment: ~8 rows (approximately)
+-- Dumping data for table psu sport equipment.sport_equipment: ~9 rows (approximately)
 INSERT INTO `sport_equipment` (`eq_id`, `category_id`, `eq_code`, `eq_name`, `status`, `created_at`) VALUES
 	(1, 1, 'PSU-01-001', 'ลูกวอลเลย์ Molten V5M5000', 'avaliable', '2026-08-24 13:51:51'),
-	(2, 1, 'PSU-01-002', 'ลูกวอลเลย์ Molten V5M5000', 'borrowed', '2026-08-24 13:54:31'),
+	(2, 1, 'PSU-01-002', 'ลูกวอลเลย์ Molten V5M5000', 'avaliable', '2026-08-24 13:54:31'),
 	(3, 2, 'PSU-02-001', 'ลูกฟุตบอลหนังเย็บ Molten F5A4800', 'avaliable', '2026-08-24 14:00:05'),
-	(4, 1, 'PSU-01-003', 'ลูกวอลเลย์ Molten V5M5000', 'damaged', '2026-08-24 17:14:49'),
-	(5, 2, 'PSU-02-002', 'ลูกฟุตบอลหนังเย็บ Molten F5A4800', 'borrowed', '2026-08-24 17:15:53'),
-	(6, 2, 'PSU-02-003', 'ลูกฟุตบอลหนังเย็บ Molten F5A4800', 'borrowed', '2026-08-24 17:16:28'),
+	(4, 1, 'PSU-01-003', 'ลูกวอลเลย์ Molten V5M5000', 'avaliable', '2026-08-24 17:14:49'),
+	(5, 2, 'PSU-02-002', 'ลูกฟุตบอลหนังเย็บ Molten F5A4800', 'avaliable', '2026-08-24 17:15:53'),
+	(6, 2, 'PSU-02-003', 'ลูกฟุตบอลหนังเย็บ Molten F5A4800', 'avaliable', '2026-08-24 17:16:28'),
 	(7, 3, 'PSU-03-001', 'ลูกฟุตซอลหนังเย็บ Molten F9A3555', 'avaliable', '2026-08-24 17:22:30'),
 	(8, 3, 'PSU-03-002', 'ลูกฟุตซอลหนังเย็บ Molten F9A3555', 'avaliable', '2026-08-24 17:23:57'),
 	(9, 3, 'PSU-03-003', 'ลูกฟุตซอลหนังเย็บ Molten F9A3555', 'avaliable', '2026-08-25 03:49:38');
@@ -136,34 +155,9 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   KEY `user_id` (`user_id`),
   CONSTRAINT `eq_id` FOREIGN KEY (`eq_id`) REFERENCES `sport_equipment` (`eq_id`) ON UPDATE CASCADE,
   CONSTRAINT `user_id` FOREIGN KEY (`user_id`) REFERENCES `user` (`user_id`) ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Dumping data for table psu sport equipment.transactions: ~24 rows (approximately)
-INSERT INTO `transactions` (`trans_id`, `eq_id`, `user_id`, `borrow_time`, `due_time`, `return_time`, `borrow_image`, `return_image`, `trans_status`, `analyze_damaged_status`) VALUES
-	(1, 1, 1, '2026-08-25 00:03:49', '2026-08-26 23:59:59', '2026-08-25 00:04:01', 'borrow_1787591029_772.jfif', 'return_1787591041_465.jfif', 'returned', 'normal'),
-	(2, 3, 1, '2026-08-25 00:40:40', '2026-08-28 23:59:59', '2026-08-25 00:40:52', 'borrow_1787593240_733.jfif', 'return_1787593252_870.jfif', 'returned', 'normal'),
-	(3, 8, 1, '2026-08-25 00:41:06', '2026-08-28 23:59:59', '2026-08-25 00:41:12', 'borrow_1787593266_478.jfif', 'return_1787593272_767.jfif', 'returned', 'normal'),
-	(4, 2, 1, '2026-08-25 00:42:01', '2026-08-28 23:59:59', '2026-08-25 00:42:07', 'borrow_1787593321_273.jfif', 'return_1787593327_350.jfif', 'returned', 'normal'),
-	(5, 1, 3, '2026-08-25 00:42:48', '2026-08-28 23:59:59', '2026-08-25 00:42:57', 'borrow_1787593368_616.jfif', 'return_1787593377_166.jfif', 'returned', 'normal'),
-	(6, 4, 3, '2026-08-25 00:43:07', '2026-08-28 23:59:59', '2026-08-25 00:43:16', 'borrow_1787593387_113.jfif', 'return_1787593396_363.jfif', 'returned', 'normal'),
-	(7, 1, 3, '2026-08-25 00:45:23', '2026-08-28 23:59:59', '2026-08-25 00:45:31', 'borrow_1787593523_705.jfif', 'return_1787593531_326.jfif', 'returned', 'normal'),
-	(8, 4, 4, '2026-08-25 01:00:30', '2026-08-28 23:59:59', '2026-08-25 01:00:37', 'borrow_1787594430_256.jfif', 'return_1787594437_399.jfif', 'returned', 'normal'),
-	(9, 7, 4, '2026-08-25 01:00:56', '2026-08-28 23:59:59', '2026-08-25 01:01:03', 'borrow_1787594456_273.jfif', 'return_1787594463_927.jfif', 'returned', 'normal'),
-	(10, 6, 5, '2026-08-25 01:02:36', '2026-08-28 23:59:59', '2026-08-25 01:02:42', 'borrow_1787594556_280.jfif', 'return_1787594562_831.jfif', 'returned', 'normal'),
-	(11, 3, 5, '2026-08-25 01:02:56', '2026-08-28 23:59:59', '2026-08-25 01:03:01', 'borrow_1787594576_132.jfif', 'return_1787594581_191.jfif', 'returned', 'normal'),
-	(12, 8, 4, '2026-08-25 01:03:21', '2026-08-28 23:59:59', '2026-08-25 01:03:39', 'borrow_1787594601_453.jfif', 'return_1787594619_242.jfif', 'returned', 'normal'),
-	(13, 7, 4, '2026-08-25 01:03:29', '2026-08-28 23:59:59', '2026-08-25 01:03:34', 'borrow_1787594609_710.jfif', 'return_1787594614_936.jfif', 'returned', 'normal'),
-	(14, 2, 4, '2026-08-25 01:12:52', '2026-08-28 23:59:59', NULL, 'borrow_1787595172_600.jfif', NULL, 'borrowed', 'normal'),
-	(15, 8, 1, '2026-08-23 01:14:02', '2026-08-24 23:59:59', '2026-08-25 01:16:34', 'borrow_1787595242_580.jfif', 'return_1787595394_300.jfif', 'returned', 'normal'),
-	(16, 6, 3, '2026-08-21 01:15:33', '2026-08-23 23:59:59', NULL, 'borrow_1787595333_838.jfif', NULL, 'overdue', 'normal'),
-	(17, 5, 1, '2026-08-25 01:16:11', '2026-08-28 23:59:59', '2026-08-25 01:42:44', 'borrow_1787595371_970.jfif', 'return_1787596964_568.jfif', 'returned', 'normal'),
-	(18, 5, 1, '2026-08-21 01:20:58', '2026-08-22 23:59:59', '2026-08-25 01:21:06', 'borrow_1787595658_248.jfif', 'return_1787595666_861.jfif', 'returned', 'normal'),
-	(19, 8, 1, '2026-08-21 01:26:16', '2026-08-22 23:59:59', '2026-08-25 01:34:31', 'borrow_1787595976_325.jfif', 'return_1787596471_680.jfif', 'returned', 'normal'),
-	(20, 8, 1, '2026-08-21 01:44:07', '2026-08-23 23:59:59', '2026-08-25 11:01:19', 'borrow_1787597047_119.jfif', 'return_1787630479_352.jfif', 'overdue', 'normal'),
-	(21, 5, 1, '2026-08-25 01:44:29', '2026-08-28 23:59:59', NULL, 'borrow_1787597069_225.jfif', NULL, 'borrowed', 'normal'),
-	(22, 1, 1, '2026-08-25 04:34:14', '2026-08-28 23:59:59', '2026-08-25 04:34:36', 'borrow_1787607254_962.jpg', 'return_1787607276_698.jpg', 'returned', 'normal'),
-	(23, 1, 1, '2026-08-25 04:34:52', '2026-08-28 23:59:59', '2026-08-25 04:35:09', 'borrow_1787607292_855.jpg', 'return_1787607309_945.jpg', 'returned', 'normal'),
-	(24, 9, 1, '2026-08-25 10:53:59', '2026-08-28 23:59:59', '2026-08-25 10:59:44', 'borrow_1787630039_988.jfif', 'return_1787630384_809.jfif', 'returned', 'normal');
+-- Dumping data for table psu sport equipment.transactions: ~0 rows (approximately)
 
 -- Dumping structure for table psu sport equipment.user
 CREATE TABLE IF NOT EXISTS `user` (
@@ -172,6 +166,10 @@ CREATE TABLE IF NOT EXISTS `user` (
   `student_id` varchar(50) DEFAULT NULL,
   `full_name` varchar(255) DEFAULT NULL,
   `email` varchar(255) DEFAULT NULL,
+  `gender` varchar(20) DEFAULT NULL,
+  `national_id` varchar(13) DEFAULT NULL,
+  `faculty` varchar(100) DEFAULT NULL,
+  `campus` varchar(100) DEFAULT NULL,
   `role` enum('user','admin') DEFAULT 'user',
   `status` enum('active','inactive','graduated') DEFAULT 'active',
   `enrollment_year` int(4) DEFAULT NULL,
@@ -179,16 +177,12 @@ CREATE TABLE IF NOT EXISTS `user` (
   PRIMARY KEY (`user_id`),
   UNIQUE KEY `line_user_id` (`line_user_id`),
   UNIQUE KEY `psu_passport_id` (`student_id`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Dumping data for table psu sport equipment.user: ~6 rows (approximately)
-INSERT INTO `user` (`user_id`, `line_user_id`, `student_id`, `full_name`, `email`, `role`, `status`, `enrollment_year`, `created_at`) VALUES
-	(1, NULL, '6650110025', 'นาย ศุภณัฐ วรฤทธิ์', '6650110025@email.psu.ac.th', 'user', 'active', 2569, '2026-08-21 07:44:18'),
-	(2, NULL, '6650110099', 'นาย สมชาย ใจดี', '6650110099@email.psu.ac.th', 'admin', 'active', 2565, '2026-08-24 14:37:45'),
-	(3, NULL, '6650110001', 'นาย กิตติพัฒน์ บุญรอด', '6650110001@email.psu.ac.th', 'user', 'active', 2568, '2026-08-24 16:08:22'),
-	(4, NULL, '6650110008', 'นาย ธนดล ยิ้นห้อง', '6650110008@email.psu.ac.th', 'user', 'active', 2567, '2026-08-24 16:09:38'),
-	(5, NULL, '6650110098', 'นาย สมส่วน สมมาตร', '6650110098@email.psu.ac.th', 'user', 'active', 2566, '2026-08-24 16:10:36'),
-	(6, NULL, '6650110097', 'นาง สมศรี ใจสุข', '6650110097@email.psu.ac.th', 'user', 'active', 2566, '2026-08-24 16:11:28');
+-- Dumping data for table psu sport equipment.user: ~2 rows (approximately)
+INSERT INTO `user` (`user_id`, `line_user_id`, `student_id`, `full_name`, `email`, `gender`, `national_id`, `faculty`, `campus`, `role`, `status`, `enrollment_year`, `created_at`) VALUES
+	(1, 'U059814306a67356f7368da9602037642', '6650110025', 'นาย ศุภณัฐ วรฤทธิ์', 'uslnw007@gmail.com', 'M', '1809902280707', 'คณะพาณิชยศาสตร์และการจัดการ', 'วิทยาเขตตรัง', 'admin', 'active', 2566, '2026-10-05 16:38:55'),
+	(2, NULL, '6650110001', 'นาย กิตติพัฒน์ บุญรอด', '6650110001@email.psu.ac.th', NULL, NULL, NULL, NULL, 'user', 'active', 2568, '2026-08-24 16:08:22');
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;

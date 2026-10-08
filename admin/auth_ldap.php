@@ -100,33 +100,33 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
         }
     } 
     // กรณีที่ 2: ไม่สามารถเชื่อมต่อไปยังเครือข่ายของมหาวิทยาลัยได้ (ไม่ได้เปิด VPN)
-    elseif ($authen_result["status"] === -1) {
-        // [Localhost Development Bypass] ตรวจสอบตรงกับฐานข้อมูลในเครื่องเพื่ออำนวยความสะดวกในการพัฒนา
-        $stmt = $pdo->prepare("
-            SELECT * FROM user 
-            WHERE (student_id = ? OR email = ?) 
-              AND role = 'admin' 
-              AND status = 'active' 
-            LIMIT 1
-        ");
-        $stmt->execute([$username, $username]);
-        $adminUser = $stmt->fetch();
+    // elseif ($authen_result["status"] === -1) {
+    //     // [Localhost Development Bypass] ตรวจสอบตรงกับฐานข้อมูลในเครื่องเพื่ออำนวยความสะดวกในการพัฒนา
+    //     $stmt = $pdo->prepare("
+    //         SELECT * FROM user 
+    //         WHERE (student_id = ? OR email = ?) 
+    //           AND role = 'admin' 
+    //           AND status = 'active' 
+    //         LIMIT 1
+    //     ");
+    //     $stmt->execute([$username, $username]);
+    //     $adminUser = $stmt->fetch();
 
-        if ($adminUser) {
-            $_SESSION['admin_logged_in'] = true;
-            $_SESSION['admin_id'] = $adminUser['user_id'];
-            $_SESSION['admin_name'] = $adminUser['full_name'];
-            $_SESSION['admin_email'] = $adminUser['email'];
-            $_SESSION['admin_student_id'] = $adminUser['student_id'];
+    //     if ($adminUser) {
+    //         $_SESSION['admin_logged_in'] = true;
+    //         $_SESSION['admin_id'] = $adminUser['user_id'];
+    //         $_SESSION['admin_name'] = $adminUser['full_name'];
+    //         $_SESSION['admin_email'] = $adminUser['email'];
+    //         $_SESSION['admin_student_id'] = $adminUser['student_id'];
 
-            header("Location: dashboard.php");
-            exit;
-        } else {
-            $_SESSION['login_error'] = "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ PSU Passport ได้ (กรุณาต่อ PSU VPN) หรือไม่พบข้อมูลแอดมินในระบบ";
-            header("Location: login_ldap.php");
-            exit;
-        }
-    } 
+    //         header("Location: dashboard.php");
+    //         exit;
+    //     } else {
+    //         $_SESSION['login_error'] = "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ PSU Passport ได้ (กรุณาต่อ PSU VPN) หรือไม่พบข้อมูลแอดมินในระบบ";
+    //         header("Location: login_ldap.php");
+    //         exit;
+    //     }
+    // } 
     // กรณีที่ 3: Username หรือ Password ของ PSU Passport ไม่ถูกต้อง
     else {
         $_SESSION['login_error'] = "เข้าสู่ระบบล้มเหลว: Username หรือ Password ของ PSU Passport ไม่ถูกต้อง";
