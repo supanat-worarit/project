@@ -9,12 +9,12 @@ $selected_year = $_GET['year'] ?? date('Y');
 
 // กำหนดเงื่อนไข SQL ตามโหมดที่เลือก
 if ($filter_mode === 'yearly') {
-    $timeSql = "DATE_FORMAT(borrow_time, '%Y') = ?";
+    $timeSql = "DATE_FORMAT(t.borrow_time, '%Y') = ?";
     $timeParam = $selected_year;
     $displayPeriodText = "ประจำปี " . ($selected_year + 543);
     $cardTitlePeriod = "1. รายการยืมทั้งหมดปีนี้";
 } else {
-    $timeSql = "DATE_FORMAT(borrow_time, '%Y-%m') = ?";
+    $timeSql = "DATE_FORMAT(t.borrow_time, '%Y-%m') = ?";
     $timeParam = $selected_month;
     $timeObj = strtotime($selected_month . "-01");
     $displayPeriodText = "ประจำเดือน " . date('m/', $timeObj) . (date('Y', $timeObj) + 543);
@@ -22,11 +22,11 @@ if ($filter_mode === 'yearly') {
 }
 
 // 1. สถิติการยืมทั้งหมดตามช่วงเวลาที่เลือก
-$stmtTotal = $pdo->prepare("SELECT COUNT(*) FROM transactions WHERE {$timeSql}");
+$stmtTotal = $pdo->prepare("SELECT COUNT(*) FROM transactions t WHERE {$timeSql}");
 $stmtTotal->execute([$timeParam]);
 $totalPeriodBorrows = $stmtTotal->fetchColumn();
 
-// 2. จำนวนคนที่ค้างส่ง / รายการค้างส่ง (เกินกำหนดและยังไม่คืน)
+// 2. จำนวนคนที่ค้างส่ง / รายการค้างส่ง
 $stmtOverdue = $pdo->query("
     SELECT 
         COUNT(DISTINCT user_id) as total_users_overdue,
@@ -42,14 +42,21 @@ $overdueData = $stmtOverdue->fetch(PDO::FETCH_ASSOC);
 $totalOverdueUsers = $overdueData['total_users_overdue'] ?? 0;
 $totalOverdueItems = $overdueData['total_items_overdue'] ?? 0;
 
-// 3. อุปกรณ์แจ้งชำรุด / เสียหาย
-$stmtDamaged = $pdo->query("
-    SELECT COUNT(*) FROM sport_equipment 
-    WHERE status IN ('damaged', 'maintenance')
+// 3. ยอดรวมค่าปรับที่ได้รับแล้ว (SlipOK Verified) ตามช่วงเวลา
+$stmtFines = $pdo->prepare("
+    SELECT SUM(ef.price) 
+    FROM equipment_fines ef
+    JOIN transactions t ON ef.trans_id = t.trans_id
+    WHERE ef.payment_status = 'paid' AND {$timeSql}
 ");
+$stmtFines->execute([$timeParam]);
+$totalFines = $stmtFines->fetchColumn() ?? 0;
+
+// 4. จำนวนอุปกรณ์ที่ชำรุด / ซ่อมบำรุง
+$stmtDamaged = $pdo->query("SELECT COUNT(*) FROM sport_equipment WHERE status IN ('damaged', 'maintenance')");
 $totalDamaged = $stmtDamaged->fetchColumn();
 
-// 4. สถิติอุปกรณ์ที่ถูกยืมบ่อย Top 5 ตามช่วงเวลา
+// 5. สถิติอุปกรณ์ที่ถูกยืมบ่อย Top 5 ตามช่วงเวลา
 $stmtTopEq = $pdo->prepare("
     SELECT e.eq_name, COUNT(t.trans_id) as borrow_count 
     FROM transactions t
@@ -61,6 +68,46 @@ $stmtTopEq = $pdo->prepare("
 ");
 $stmtTopEq->execute([$timeParam]);
 $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
+
+// 6. ดึงข้อมูลทำกราฟ (ข้อมูลจริง) แยกตามชั้นปีนักศึกษา
+$current_academic_year = date('Y') + 543; 
+$stmtChart = $pdo->prepare("
+    SELECT 
+        c.category_name,
+        u.enrollment_year,
+        COUNT(t.trans_id) as borrow_count
+    FROM transactions t
+    JOIN user u ON t.user_id = u.user_id
+    JOIN sport_equipment e ON t.eq_id = e.eq_id
+    JOIN sport_categories c ON e.category_id = c.category_id
+    WHERE {$timeSql} AND u.enrollment_year IS NOT NULL
+    GROUP BY c.category_id, u.enrollment_year
+");
+$stmtChart->execute([$timeParam]);
+$chartDataRaw = $stmtChart->fetchAll(PDO::FETCH_ASSOC);
+
+$categories = [];
+$year1 = []; $year2 = []; $year3 = []; $year4 = [];
+
+foreach ($chartDataRaw as $row) {
+    $cat = $row['category_name'];
+    if (!in_array($cat, $categories)) $categories[] = $cat;
+    
+    $student_year = $current_academic_year - (int)$row['enrollment_year'] + 1;
+    
+    if ($student_year == 1) $year1[$cat] = ($year1[$cat] ?? 0) + $row['borrow_count'];
+    elseif ($student_year == 2) $year2[$cat] = ($year2[$cat] ?? 0) + $row['borrow_count'];
+    elseif ($student_year == 3) $year3[$cat] = ($year3[$cat] ?? 0) + $row['borrow_count'];
+    else $year4[$cat] = ($year4[$cat] ?? 0) + $row['borrow_count'];
+}
+
+$y1Data = []; $y2Data = []; $y3Data = []; $y4Data = [];
+foreach ($categories as $cat) {
+    $y1Data[] = $year1[$cat] ?? 0;
+    $y2Data[] = $year2[$cat] ?? 0;
+    $y3Data[] = $year3[$cat] ?? 0;
+    $y4Data[] = $year4[$cat] ?? 0;
+}
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -70,54 +117,29 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
     <title>Dashboard ภาพรวมศูนย์กีฬา ม.อ.ตรัง</title>
     <style>
         .stat-card {
-            border-radius: 14px;
-            color: #ffffff;
-            padding: 22px 24px;
-            border: none;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            display: block;
-            text-decoration: none;
+            border-radius: 14px; color: #ffffff; padding: 22px 24px; border: none;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06); transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: block; text-decoration: none;
         }
-        .stat-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-            color: #ffffff;
-        }
+        .stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12); color: #ffffff; }
         .stat-blue { background: linear-gradient(135deg, #0d6efd, #0056b3); }
         .stat-yellow { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .stat-green { background: linear-gradient(135deg, #10b981, #047857); }
         .stat-red { background: linear-gradient(135deg, #ef4444, #b91c1c); }
-        
-        .card-custom {
-            border-radius: 14px;
-            background: #ffffff;
-            border: none;
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-        }
-        .rank-circle {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: 700;
-        }
+        .card-custom { border-radius: 14px; background: #ffffff; border: none; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04); }
+        .rank-circle { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
     </style>
 </head>
 <body class="d-flex">
     <?php include '../components/sidebar.php'; ?>
 
     <div class="flex-grow-1 p-4" style="background-color: #f8fafc; min-height: 100vh;">
-        <!-- Header พร้อมตัวเลือกมุมขวาบน (สลับรายเดือน / รายปี) -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
             <div>
                 <h4 class="fw-bold mb-1 text-dark">ภาพรวมและสถิติการยืม-คืน <?= $displayPeriodText ?></h4>
                 <p class="text-muted small mb-0">ศูนย์กีฬา มหาวิทยาลัยสงขลานครินทร์ วิทยาเขตตรัง</p>
             </div>
 
-            <!-- ตัวกรองมุมขวาบน -->
             <form method="GET" action="dashboard.php" class="bg-white p-2 rounded-3 border shadow-sm d-flex align-items-center gap-2">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light border-0"><i class="bi bi-calendar3 text-primary"></i></span>
@@ -126,11 +148,9 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
                         <option value="yearly" <?= $filter_mode === 'yearly' ? 'selected' : '' ?>>รายปี</option>
                     </select>
                 </div>
-
                 <div id="monthSelector" style="<?= $filter_mode === 'monthly' ? '' : 'display: none;' ?>">
                     <input type="month" name="month" class="form-control form-control-sm" value="<?= htmlspecialchars($selected_month) ?>" onchange="this.form.submit()">
                 </div>
-
                 <div id="yearSelector" style="<?= $filter_mode === 'yearly' ? '' : 'display: none;' ?>">
                     <select name="year" class="form-select form-select-sm" onchange="this.form.submit()">
                         <?php 
@@ -144,9 +164,9 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
             </form>
         </div>
 
-        <!-- Metric Stat Cards -->
+        <!-- Metric Stat Cards เปลี่ยนเป็น 4 คอลัมน์ -->
         <div class="row g-3 mb-4">
-            <div class="col-md-4">
+            <div class="col-md-6 col-lg-3">
                 <a href="dashboard_borrows.php?type=<?= $filter_mode ?>&<?= $filter_mode === 'monthly' ? 'month='.$selected_month : 'year='.$selected_year ?>" class="stat-card stat-blue">
                     <div class="d-flex justify-content-between align-items-center">
                         <div class="small fw-light opacity-75"><?= $cardTitlePeriod ?></div>
@@ -158,23 +178,23 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                 </a>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6 col-lg-3">
                 <a href="overdue.php" class="stat-card stat-yellow">
                     <div class="d-flex justify-content-between align-items-center">
-                        <div class="small fw-light opacity-75">2. ผู้ค้างส่งอุปกรณ์</div>
+                        <div class="small fw-light opacity-75">2. ผู้ค้างส่ง / เกินกำหนด</div>
                         <i class="bi bi-arrow-right-circle fs-5 opacity-75"></i>
                     </div>
                     <div class="d-flex align-items-baseline gap-2 mt-2">
                         <span class="fs-1 fw-bold"><?= number_format($totalOverdueUsers) ?></span>
-                        <span class="fs-6">ราย <small class="opacity-75">(รวม <?= number_format($totalOverdueItems) ?> ชิ้น)</small></span>
+                        <span class="fs-6">ราย</span>
                     </div>
                 </a>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6 col-lg-3">
                 <a href="dashboard_damaged.php" class="stat-card stat-red">
                     <div class="d-flex justify-content-between align-items-center">
-                        <div class="small fw-light opacity-75">3. อุปกรณ์ที่ชำรุด / ซ่อมบำรุง</div>
-                        <i class="bi bi-arrow-right-circle fs-5 opacity-75"></i>
+                        <div class="small fw-light opacity-75">3. อุปกรณ์ชำรุด/ส่งซ่อม</div>
+                        <i class="bi bi-tools fs-5 opacity-75"></i>
                     </div>
                     <div class="d-flex align-items-baseline gap-2 mt-2">
                         <span class="fs-1 fw-bold"><?= number_format($totalDamaged) ?></span>
@@ -182,17 +202,25 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                 </a>
             </div>
+            <div class="col-md-6 col-lg-3">
+                <a href="#" class="stat-card stat-green">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="small fw-light opacity-75">4. รายได้ค่าปรับ (SlipOK)</div>
+                        <i class="bi bi-cash-coin fs-5 opacity-75"></i>
+                    </div>
+                    <div class="d-flex align-items-baseline gap-2 mt-2">
+                        <span class="fs-1 fw-bold"><?= number_format($totalFines, 0) ?></span>
+                        <span class="fs-6">บาท</span>
+                    </div>
+                </a>
+            </div>
         </div>
 
-        <!-- สถิติยอดนิยม & กล่องสถิติช่วงเวลา -->
         <div class="row g-3 mb-4">
-            <!-- สถิติอุปกรณ์ที่ถูกยืมบ่อย -->
-            <div class="col-lg-6">
+            <div class="col-lg-5">
                 <div class="card card-custom p-4 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="fw-bold mb-0 text-primary">
-                            <i class="bi bi-graph-up-arrow me-2"></i>สถิติอุปกรณ์ที่ถูกยืมบ่อย (Top 5)
-                        </h6>
+                        <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-graph-up-arrow me-2"></i>อุปกรณ์ที่ถูกยืมบ่อย (Top 5)</h6>
                         <span class="badge bg-light text-muted border"><?= $displayPeriodText ?></span>
                     </div>
                     <ul class="list-unstyled mb-0">
@@ -215,57 +243,22 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </div>
 
-            <!-- Peak Time -->
-            <div class="col-lg-6">
+            <div class="col-lg-7">
                 <div class="card card-custom p-4 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="fw-bold mb-0 text-warning">
-                            <i class="bi bi-clock-history me-2"></i>ช่วงเวลาที่มีการยืมสูงสุด (Peak Time)
-                        </h6>
-                        <span class="badge bg-warning-subtle text-warning border border-warning">สถิติภาพรวม</span>
-                    </div>
-
-                    <div class="mb-4 mt-2">
-                        <div class="d-flex justify-content-between small mb-1">
-                            <span class="fw-medium text-secondary">16:30 - 18:30 น. (ช่วงหลังเลิกเรียน)</span>
-                            <span class="fw-bold text-dark">72%</span>
-                        </div>
-                        <div class="progress" style="height: 10px; border-radius: 6px;">
-                            <div class="progress-bar bg-primary" style="width: 72%;"></div>
+                        <div>
+                            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-bar-chart-fill me-2 text-primary"></i>สถิติการยืมแยกตามชั้นปีนักศึกษา</h6>
+                            <small class="text-muted">เปรียบเทียบตามหมวดหมู่อุปกรณ์กีฬา</small>
                         </div>
                     </div>
-
-                    <div class="mb-4">
-                        <div class="d-flex justify-content-between small mb-1">
-                            <span class="fw-medium text-secondary">12:00 - 13:00 น. (ช่วงพักเที่ยง)</span>
-                            <span class="fw-bold text-dark">18%</span>
-                        </div>
-                        <div class="progress" style="height: 10px; border-radius: 6px;">
-                            <div class="progress-bar bg-info" style="width: 18%;"></div>
-                        </div>
-                    </div>
-
-                    <div class="p-3 bg-light rounded-3 small text-muted border">
-                        <i class="bi bi-info-circle text-primary me-1"></i>
-                        เจ้าหน้าที่ประจำเคาน์เตอร์ควรเตรียมความพร้อมในการให้บริการและตรวจสอบอุปกรณ์ในช่วงเวลา 16:30 - 18:30 น.
+                    <div style="height: 280px;">
+                        <?php if(empty($categories)): ?>
+                            <div class="h-100 d-flex align-items-center justify-content-center text-muted">ไม่พบข้อมูลการยืม</div>
+                        <?php else: ?>
+                            <canvas id="yearComparisonChart"></canvas>
+                        <?php endif; ?>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- กราฟเปรียบเทียบตามชั้นปี -->
-        <div class="card card-custom p-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div>
-                    <h6 class="fw-bold mb-0 text-dark">
-                        <i class="bi bi-bar-chart-fill me-2 text-primary"></i>สถิติการยืมอุปกรณ์แยกตามชั้นปีการศึกษา 1-4 (ประจำปี)
-                    </h6>
-                    <small class="text-muted">เปรียบเทียบสถิติความถี่ในการยืมอุปกรณ์กีฬา</small>
-                </div>
-                <span class="badge bg-light text-muted border">ปีการศึกษา <?= $selected_year + 543 ?></span>
-            </div>
-            <div style="height: 320px;">
-                <canvas id="yearComparisonChart"></canvas>
             </div>
         </div>
     </div>
@@ -277,49 +270,30 @@ $topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
             const mode = document.getElementById('filterMode').value;
             const monthBox = document.getElementById('monthSelector');
             const yearBox = document.getElementById('yearSelector');
-
-            if (mode === 'yearly') {
-                monthBox.style.display = 'none';
-                yearBox.style.display = 'block';
-            } else {
-                monthBox.style.display = 'block';
-                yearBox.style.display = 'none';
-            }
+            if (mode === 'yearly') { monthBox.style.display = 'none'; yearBox.style.display = 'block'; } 
+            else { monthBox.style.display = 'block'; yearBox.style.display = 'none'; }
         }
 
+        <?php if(!empty($categories)): ?>
         const ctxBar = document.getElementById('yearComparisonChart').getContext('2d');
         new Chart(ctxBar, {
             type: 'bar',
             data: {
-                labels: ['ลูกวอลเลย์ Molten V5M5000', 'ลูกฟุตบอลหนังเย็บ Molten F5A4800', 'ลูกฟุตซอลหนังเย็บ Molten F9A3555'],
+                labels: <?= json_encode($categories) ?>,
                 datasets: [
-                    { label: 'ปี 1', data: [4, 4, 5], backgroundColor: '#00b4d8' },
-                    { label: 'ปี 2', data: [3, 1, 0], backgroundColor: '#10b981' },
-                    { label: 'ปี 3', data: [2, 0, 3], backgroundColor: '#f59e0b' },
-                    { label: 'ปี 4', data: [0, 2, 0], backgroundColor: '#a855f7' }
+                    { label: 'ปี 1', data: <?= json_encode($y1Data) ?>, backgroundColor: '#00b4d8' },
+                    { label: 'ปี 2', data: <?= json_encode($y2Data) ?>, backgroundColor: '#10b981' },
+                    { label: 'ปี 3', data: <?= json_encode($y3Data) ?>, backgroundColor: '#f59e0b' },
+                    { label: 'ปี 4+', data: <?= json_encode($y4Data) ?>, backgroundColor: '#a855f7' }
                 ]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: { boxWidth: 14, font: { family: 'Prompt', size: 12 } }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { stepSize: 1 },
-                        grid: { color: '#f1f5f9' }
-                    },
-                    x: {
-                        grid: { display: false }
-                    }
-                }
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'top', labels: { boxWidth: 14, font: { family: 'Prompt', size: 12 } } } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
             }
         });
+        <?php endif; ?>
     </script>
 </body>
 </html>

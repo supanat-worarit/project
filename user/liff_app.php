@@ -22,6 +22,79 @@ if (!is_dir($uploadDir)) {
     mkdir($uploadDir, 0777, true);
 }
 
+$stmtFine = $pdo->prepare("
+    SELECT SUM(f.price) as total_fine, u.line_user_id
+    FROM equipment_fines f
+    JOIN transactions t ON f.trans_id = t.trans_id
+    JOIN user u ON t.user_id = u.user_id
+    WHERE t.user_id = ? AND f.payment_status = 'unpaid'
+    GROUP BY u.line_user_id
+");
+$stmtFine->execute([$userId]);
+$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC);
+
+if ($fineData && $fineData['total_fine'] > 0) {
+    // 1. มีค้างชำระ ให้ส่งข้อความแจ้งเตือนกลับไปที่แชท LINE
+    $lineId = $fineData['line_user_id'];
+    $fineAmount = number_format($fineData['total_fine'], 2);
+    
+    if ($lineId && !empty(LINE_ACCESS_TOKEN)) {
+        $msgText = "⚠️ คุณไม่สามารถทำรายการยืมใหม่ได้!\nเนื่องจากมียอดค่าปรับค้างชำระจำนวน {$fineAmount} บาท\n\nกรุณาชำระเงินโดยส่งรูปสลิปเข้ามาในแชทนี้\nเพื่อปลดล็อกการใช้งานครับ\n\nข้อมูลการชำระเงิน\nธนาคาร: ไทยพาณิชย์\nเลขบัญชี: 8662438582\nชื่อบัญชี: นาย ศุภณัฐ วรฤทธิ์";
+        $post_data = json_encode(['to' => $lineId, 'messages' => [['type' => 'text', 'text' => $msgText]]]);
+        
+        $ch = curl_init('https://api.line.me/v2/bot/message/push');
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json', 
+            'Authorization: Bearer ' . LINE_ACCESS_TOKEN
+        ]);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+
+    // 2. แสดงแจ้งเตือนบนหน้าเว็บ และใช้ LIFF ปิดหน้าต่างตัวเองกลับไปหน้าแชท
+    ?>
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ระงับการใช้งานชั่วคราว</title>
+        <!-- นำเข้า LIFF และ SweetAlert2 -->
+        <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    </head>
+    <body style="background-color: #f8fafc;">
+        <script>
+            liff.init({ liffId: "<?= LIFF_ID ?>" }).then(() => {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'มียอดค้างชำระ!',
+                    text: 'คุณมีค่าปรับค้างชำระ <?= $fineAmount ?> บาท กรุณาชำระเงินผ่านแชท LINE ก่อนทำรายการยืมครั้งถัดไป',
+                    confirmButtonColor: '#dc3545',
+                    confirmButtonText: 'กลับไปที่แชท LINE',
+                    allowOutsideClick: false
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        liff.closeWindow(); // สั่งปิดหน้าต่าง LIFF ทันที
+                    }
+                });
+            }).catch((err) => {
+                console.error(err);
+            });
+        </script>
+    </body>
+    </html>
+    <?php
+    exit; // สำคัญมาก: หยุดการเรนเดอร์หน้าเว็บส่วนที่เหลือ (ไม่ให้แสดงรายการอุปกรณ์)
+}
+// ==========================================
+// สิ้นสุดระบบตรวจสอบ (ถ้าไม่มีหนี้ โค้ดจะรันข้ามลงมาทำงานด้านล่างตามปกติ)
+
 // 1. ดึงข้อมูลผู้ใช้งานปัจจุบัน
 $uStmt = $pdo->prepare("SELECT * FROM `user` WHERE user_id = ? LIMIT 1");
 $uStmt->execute([$userId]);
@@ -63,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt->execute([$userId, $eqId, $borrowImage, $bDate, $dDate]);
         
         // ล็อกสถานะอุปกรณ์เพื่อไม่ให้คนอื่นกดซ้ำระหว่างรออนุมัติ
-        $pdo->prepare("UPDATE `sport_equipment` SET status = 'maintenance' WHERE eq_id = ?")->execute([$eqId]);
+        $pdo->prepare("UPDATE `sport_equipment` SET status = 'pending' WHERE eq_id = ?")->execute([$eqId]);
         $pdo->commit();
 
         echo "<script>alert('ส่งคำขอยืมเรียบร้อย กรุณารอเจ้าหน้าที่อนุมัติ'); window.location.href='liff_app.php?page=borrow';</script>";

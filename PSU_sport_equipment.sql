@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS `image_equipment` (
   CONSTRAINT `eq_id2` FOREIGN KEY (`eq_id`) REFERENCES `sport_equipment` (`eq_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Dumping data for table psu sport equipment.image_equipment: ~27 rows (approximately)
+-- Dumping data for table psu sport equipment.image_equipment: ~0 rows (approximately)
 INSERT INTO `image_equipment` (`image_id`, `image_path`, `eq_id`) VALUES
 	(1, 'uploads/equipments/1787579511_0_d15f82d7-5dd9-444c-a56b-5da80d5f2eab.jfif', 1),
 	(2, 'uploads/equipments/1787579511_1_646224b6-8a14-45b6-b6de-365ad7b40528.jfif', 1),
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS `sport_equipment` (
   `category_id` int(11) DEFAULT NULL,
   `eq_code` varchar(255) DEFAULT '',
   `eq_name` varchar(255) DEFAULT '',
-  `status` enum('avaliable','borrowed','damaged','maintenance') NOT NULL DEFAULT 'avaliable',
+  `status` enum('avaliable','borrowed','damaged','maintenance','pending') NOT NULL DEFAULT 'avaliable',
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`eq_id`),
   KEY `category_id` (`category_id`),
@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   `return_time` datetime DEFAULT NULL,
   `borrow_image` varchar(255) NOT NULL,
   `return_image` varchar(255) DEFAULT NULL,
-  `trans_status` enum('borrowed','returned','overdue') NOT NULL DEFAULT 'borrowed',
+  `trans_status` enum('borrowed','returned','overdue','pending_return') NOT NULL DEFAULT 'borrowed',
   `analyze_damaged_status` enum('normal','damaged','pending') NOT NULL DEFAULT 'normal',
   PRIMARY KEY (`trans_id`),
   KEY `eq_id` (`eq_id`),
