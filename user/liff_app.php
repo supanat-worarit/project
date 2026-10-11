@@ -1,5 +1,5 @@
 <?php
-// user/liff_app.php - รวมหน้ายืม คืน ประวัติ
+// user/liff_app.php
 session_start();
 require_once __DIR__ . '../../config/db.php';
 require_once __DIR__ . '../../config/settings.php';
@@ -16,12 +16,45 @@ try {
 $userId = (int)$_SESSION['user_id'];
 $page = $_GET['page'] ?? 'borrow';
 
-// สร้างโฟลเดอร์ uploads อัตโนมัติหากยังไม่มี
 $uploadDir = __DIR__ . '/uploads/';
 if (!is_dir($uploadDir)) {
     mkdir($uploadDir, 0777, true);
 }
 
+// Helper Function สำหรับแจ้งเตือนแบบ SweetAlert
+function alertAndRedirect($icon, $title, $text, $btnColor, $redirectUrl) {
+    $action = ($redirectUrl === 'back') ? "window.history.back();" : "window.location.href = '$redirectUrl';";
+    echo <<<HTML
+    <!DOCTYPE html>
+    <html lang="th">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600&display=swap" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <style>
+            body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; margin: 0; }
+            .swal2-popup { width: 85% !important; max-width: 320px !important; border-radius: 16px !important; padding: 1.5em 1em 1.2em !important; }
+            .swal2-title { font-size: 20px !important; margin-bottom: 5px !important; }
+            .swal2-html-container { font-size: 14px !important; color: #4b5563 !important; }
+            .swal2-confirm { font-size: 15px !important; font-weight: 500 !important; width: 100% !important; border-radius: 8px !important; padding: 10px !important; margin-top: 15px !important; }
+            .swal2-icon { transform: scale(0.8); margin: 0 auto 10px auto !important; }
+        </style>
+    </head>
+    <body>
+        <script>
+            Swal.fire({
+                icon: '$icon', title: '$title', text: '$text',
+                confirmButtonText: 'ตกลง', confirmButtonColor: '$btnColor', allowOutsideClick: false
+            }).then(() => { $action });
+        </script>
+    </body>
+    </html>
+    HTML;
+    exit;
+}
+
+// 1. ตรวจสอบหนี้ค้างชำระ
 $stmtFine = $pdo->prepare("
     SELECT SUM(f.price) as total_fine, u.line_user_id
     FROM equipment_fines f
@@ -34,7 +67,6 @@ $stmtFine->execute([$userId]);
 $fineData = $stmtFine->fetch(PDO::FETCH_ASSOC);
 
 if ($fineData && $fineData['total_fine'] > 0) {
-    // 1. มีค้างชำระ ให้ส่งข้อความแจ้งเตือนกลับไปที่แชท LINE
     $lineId = $fineData['line_user_id'];
     $fineAmount = number_format($fineData['total_fine'], 2);
     
@@ -46,68 +78,22 @@ if ($fineData && $fineData['total_fine'] > 0) {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json', 
-            'Authorization: Bearer ' . LINE_ACCESS_TOKEN
-        ]);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-        curl_exec($ch);
-        curl_close($ch);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . LINE_ACCESS_TOKEN]);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_exec($ch); curl_close($ch);
     }
-
-    // 2. แสดงแจ้งเตือนบนหน้าเว็บ และใช้ LIFF ปิดหน้าต่างตัวเองกลับไปหน้าแชท
-    ?>
-    <!DOCTYPE html>
-    <html lang="th">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ระงับการใช้งานชั่วคราว</title>
-        <!-- นำเข้า LIFF และ SweetAlert2 -->
-        <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    </head>
-    <body style="background-color: #f8fafc;">
-        <script>
-            liff.init({ liffId: "<?= LIFF_ID ?>" }).then(() => {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'มียอดค้างชำระ!',
-                    text: 'คุณมีค่าปรับค้างชำระ <?= $fineAmount ?> บาท กรุณาชำระเงินผ่านแชท LINE ก่อนทำรายการยืมครั้งถัดไป',
-                    confirmButtonColor: '#dc3545',
-                    confirmButtonText: 'กลับไปที่แชท LINE',
-                    allowOutsideClick: false
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        liff.closeWindow(); // สั่งปิดหน้าต่าง LIFF ทันที
-                    }
-                });
-            }).catch((err) => {
-                console.error(err);
-            });
-        </script>
-    </body>
-    </html>
-    <?php
-    exit; // สำคัญมาก: หยุดการเรนเดอร์หน้าเว็บส่วนที่เหลือ (ไม่ให้แสดงรายการอุปกรณ์)
+    alertAndRedirect('warning', 'มียอดค้างชำระ!', "คุณมีค่าปรับค้างชำระ {$fineAmount} บาท กรุณาชำระเงินผ่านแชท LINE ก่อนทำรายการ", '#dc3545', 'back');
 }
-// ==========================================
-// สิ้นสุดระบบตรวจสอบ (ถ้าไม่มีหนี้ โค้ดจะรันข้ามลงมาทำงานด้านล่างตามปกติ)
 
-// 1. ดึงข้อมูลผู้ใช้งานปัจจุบัน
 $uStmt = $pdo->prepare("SELECT * FROM `user` WHERE user_id = ? LIMIT 1");
 $uStmt->execute([$userId]);
-$user = $uStmt->fetch() ?: [
-    'full_name'  => $_SESSION['full_name'] ?? 'นักศึกษา',
-    'student_id' => $_SESSION['student_id'] ?? '-'
-];
+$user = $uStmt->fetch() ?: ['full_name' => $_SESSION['full_name'] ?? 'นักศึกษา', 'student_id' => $_SESSION['student_id'] ?? '-'];
 
 // 2. จัดการส่งคำขอยืม
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'borrow') {
     $eqId = (int)$_POST['eq_id'];
     $bDate = !empty($_POST['borrow_date']) ? $_POST['borrow_date'] : date('Y-m-d');
-    $dDate = !empty($_POST['due_date'])    ? $_POST['due_date']    : date('Y-m-d', strtotime('+3 days'));
+    $dDate = !empty($_POST['due_date']) ? $_POST['due_date'] : date('Y-m-d', strtotime('+3 days'));
     $borrowImage = 'default_borrow.jpg';
 
     if (isset($_FILES['borrow_image']) && $_FILES['borrow_image']['error'] === UPLOAD_ERR_OK) {
@@ -124,32 +110,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $currEq = $chk->fetch();
 
         if (!$currEq || $currEq['status'] !== 'avaliable') {
-            echo "<script>alert('ขออภัย อุปกรณ์ชิ้นนี้ถูกยืมไปแล้ว หรือไม่พร้อมใช้งาน'); window.location.href='liff_app.php?page=borrow';</script>";
-            exit;
+            alertAndRedirect('error', 'ขออภัย', 'อุปกรณ์ชิ้นนี้ถูกทำรายการไปแล้ว หรือไม่พร้อมใช้งาน', '#d33', 'liff_app.php?page=borrow');
         }
 
         $pdo->beginTransaction();
         $stmt = $pdo->prepare("
-            INSERT INTO `approval_requests` (user_id, eq_id, req_type, evidence_image, borrow_date, due_date, status) 
-            VALUES (?, ?, 'borrow', ?, ?, ?, 'pending')
+            INSERT INTO `transactions` (eq_id, user_id, borrow_time, due_time, borrow_image, trans_status) 
+            VALUES (?, ?, NOW(), ?, ?, 'pending_borrow')
         ");
-        $stmt->execute([$userId, $eqId, $borrowImage, $bDate, $dDate]);
+        $stmt->execute([$eqId, $userId, $dDate . ' 23:59:59', $borrowImage]);
         
-        // ล็อกสถานะอุปกรณ์เพื่อไม่ให้คนอื่นกดซ้ำระหว่างรออนุมัติ
         $pdo->prepare("UPDATE `sport_equipment` SET status = 'pending' WHERE eq_id = ?")->execute([$eqId]);
         $pdo->commit();
 
-        echo "<script>alert('ส่งคำขอยืมเรียบร้อย กรุณารอเจ้าหน้าที่อนุมัติ'); window.location.href='liff_app.php?page=borrow';</script>";
-        exit;
+        alertAndRedirect('success', 'สำเร็จ!', 'ส่งคำขอยืมเรียบร้อย กรุณารอเจ้าหน้าที่อนุมัติ', '#0022BA', 'liff_app.php?page=borrow');
     } catch (Exception $e) {
         $pdo->rollBack();
-        echo "<script>alert('เกิดข้อผิดพลาด: " . addslashes($e->getMessage()) . "');</script>";
+        alertAndRedirect('error', 'เกิดข้อผิดพลาด', addslashes($e->getMessage()), '#d33', 'back');
     }
 }
 
 // 3. จัดการส่งคำขอคืน
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'return') {
-    $transId     = (int)$_POST['trans_id'];
+    $transId = (int)$_POST['trans_id'];
     $returnImage = 'default_return.jpg';
 
     if (isset($_FILES['return_image']) && $_FILES['return_image']['error'] === UPLOAD_ERR_OK) {
@@ -166,60 +149,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $trans = $tStmt->fetch();
 
         if ($trans && in_array($trans['trans_status'], ['borrowed', 'overdue'])) {
-            $pdo->beginTransaction();
+            $pdo->prepare("UPDATE `transactions` SET trans_status = 'pending_return', return_image = ? WHERE trans_id = ?")
+                ->execute([$returnImage, $transId]);
             
-            $stmt = $pdo->prepare("
-                INSERT INTO `approval_requests` (user_id, eq_id, trans_id, req_type, evidence_image, status) 
-                VALUES (?, ?, ?, 'return', ?, 'pending')
-            ");
-            $stmt->execute([$userId, $trans['eq_id'], $transId, $returnImage]);
-
-            // เปลี่ยนสถานะ transactions เป็นรอตรวจสอบเพื่อไม่ให้กดคืนซ้ำได้
-            $pdo->prepare("UPDATE `transactions` SET trans_status = 'pending_return' WHERE trans_id = ?")->execute([$transId]);
-            $pdo->commit();
-            
-            echo "<script>alert('ส่งคำขอคืนเรียบร้อย รอแอดมินตรวจสอบสภาพอุปกรณ์'); window.location.href='liff_app.php?page=return';</script>";
-            exit;
+            alertAndRedirect('success', 'สำเร็จ!', 'ส่งคำขอคืนเรียบร้อย รอเจ้าหน้าที่ตรวจสอบสภาพ', '#B71C1C', 'liff_app.php?page=return');
         }
     } catch (Exception $e) {
-        $pdo->rollBack();
-        echo "<script>alert('เกิดข้อผิดพลาด: " . addslashes($e->getMessage()) . "');</script>";
+        alertAndRedirect('error', 'เกิดข้อผิดพลาด', addslashes($e->getMessage()), '#d33', 'back');
     }
 }
 
 // 4. ดึงข้อมูลอุปกรณ์ (หน้ายืม)
-$allEq = $pdo->query("
-    SELECT se.*, sc.category_name 
-    FROM `sport_equipment` se
-    LEFT JOIN `sport_categories` sc ON se.category_id = sc.category_id
-    ORDER BY se.eq_name ASC, se.eq_code ASC
-")->fetchAll();
-
+$allEq =$pdo->query("SELECT se.*, sc.category_name FROM `sport_equipment` se LEFT JOIN `sport_categories` sc ON se.category_id = sc.category_id ORDER BY se.eq_name ASC, se.eq_code ASC")->fetchAll();
 $groups = [];
-foreach ($allEq as $row) {
-    $name = $row['eq_name'];
-    if (!isset($groups[$name])) {
-        $groups[$name] = ['eq_name' => $name, 'category_name' => $row['category_name'] ?? 'ทั่วไป', 'total' => 0, 'items' => []];
-    }
-    $groups[$name]['total']++;
-    $groups[$name]['items'][] = $row;
+foreach ($allEq as$row) {
+    $name =$row['eq_name'];
+    if (!isset($groups[$name])) $groups[$name] = ['eq_name' => $name, 'category_name' =>$row['category_name'] ?? 'ทั่วไป', 'total' => 0, 'items' => []];
+    $groups[$name]['total']++;$groups[$name]['items'][] =$row;
 }
 
-// 5. ดึงรายการกำลังยืม (หน้าคืน)
-$activeBorrows = $pdo->prepare("
+// 5. ดึงรายการกำลังยืม (หน้าคืน) 
+$activeBorrows =$pdo->prepare("
     SELECT t.*, se.eq_name, se.eq_code 
     FROM `transactions` t
     JOIN `sport_equipment` se ON t.eq_id = se.eq_id
-    WHERE t.user_id = ? 
-      AND t.trans_status IN ('borrowed', 'overdue') 
-      AND t.return_time IS NULL 
+    WHERE t.user_id = ? AND t.trans_status IN ('borrowed', 'overdue') 
     ORDER BY t.due_time ASC
 ");
 $activeBorrows->execute([$userId]);
-$borrowList = $activeBorrows->fetchAll();
+$borrowList =$activeBorrows->fetchAll();
 
 // 6. ดึงข้อมูลประวัติ (หน้าประวัติ)
-$histStmt = $pdo->prepare("
+$histStmt =$pdo->prepare("
     SELECT t.*, se.eq_name, se.eq_code, ef.price AS fine_price, ef.payment_status
     FROM `transactions` t
     JOIN `sport_equipment` se ON t.eq_id = se.eq_id
@@ -229,19 +190,33 @@ $histStmt = $pdo->prepare("
 ");
 $histStmt->execute([$userId]);
 $historyList =$histStmt->fetchAll();
+
+// ==========================================
+// การตั้งค่าตัวแปรวันที่สำหรับ HTML Form
+// ==========================================
+$todayStr = date('Y-m-d'); // วันที่ปัจจุบัน
+$maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจจุบัน + 3 วัน
 ?>
 <!DOCTYPE html>
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ระบบยืม-คืนอุปกรณ์กีฬา PSU</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- เพิ่มไลบรารี SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+      /* ปิดการใช้งานปุ่มเลือกวันที่ๆ ถูก Disable เพื่อไม่ให้ User สับสน */
+      input[type="date"][readonly] {
+          background-color: #e5e7eb;
+          cursor: not-allowed;
+      }
+  </style>
 </head>
 <body class="bg-gray-100 flex justify-center min-h-screen font-sans">
   <div class="w-full max-w-sm bg-white min-h-screen flex flex-col shadow-lg pb-16">
 
-    <!-- Header ด้านบน -->
     <div class="bg-[#0022BA] text-white p-3 shadow">
       <div class="flex items-center justify-between">
         <span class="text-sm font-bold" id="app-header-title">📦 ยืมอุปกรณ์กีฬา</span>
@@ -249,77 +224,65 @@ $historyList =$histStmt->fetchAll();
           <span class="text-[11px] bg-blue-900 border border-blue-400 px-2 py-0.5 rounded text-blue-100 font-mono">
             <?= htmlspecialchars($user['student_id'] ?? $user['user_id']) ?>
           </span>
-          <a href="logout.php" onclick="return confirm('ต้องการออกจากระบบหรือไม่?')" class="text-[11px] bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded font-bold transition">
-            ออกจากระบบ
-          </a>
+          <a href="logout.php" onclick="return confirm('ต้องการออกจากระบบหรือไม่?')" class="text-[11px] bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded font-bold transition">ออกจากระบบ</a>
         </div>
       </div>
-      <div class="text-[11px] text-blue-200 mt-1 truncate">
-        ผู้ใช้งาน: <?= htmlspecialchars($user['full_name']) ?>
-      </div>
+      <div class="text-[11px] text-blue-200 mt-1 truncate">ผู้ใช้งาน: <?= htmlspecialchars($user['full_name']) ?></div>
     </div>
 
-    <!-- ==================== TAB 1: หน้ายืมอุปกรณ์ ==================== -->
+    <!-- TAB 1: ยืมอุปกรณ์ -->
     <div id="tab-content-borrow" class="tab-view flex-1 flex flex-col <?= $page !== 'borrow' ? 'hidden' : '' ?>">
       <div id="borrow-step-1" class="flex-1 overflow-y-auto">
-        <div class="p-3 bg-gray-50 border-b sticky top-0 z-10">
-          <input type="text" id="search-borrow" onkeyup="searchBorrow()" placeholder="🔍 ค้นหาชื่ออุปกรณ์..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
-        </div>
+        <div class="p-3 bg-gray-50 border-b sticky top-0 z-10"><input type="text" id="search-borrow" onkeyup="searchBorrow()" placeholder="🔍 ค้นหาชื่ออุปกรณ์..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"></div>
         <div class="divide-y divide-gray-200">
           <?php foreach ($groups as$grp): ?>
           <div class="borrow-group-item p-3 bg-white flex justify-between items-center hover:bg-gray-50 transition">
-            <div>
-              <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($grp['category_name']) ?></div>
-            </div>
-            <div class="flex items-center space-x-3">
-              <span class="text-xs text-gray-600">จำนวน <?= $grp['total'] ?></span>
-              <button onclick='openBorrowSubList(<?= json_encode($grp, JSON_UNESCAPED_UNICODE) ?>)' class="bg-[#0022BA] text-white text-xs px-3.5 py-1 rounded shadow font-semibold">ดู</button>
-            </div>
+            <div><div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($grp['category_name']) ?></div></div>
+            <div class="flex items-center space-x-3"><span class="text-xs text-gray-600">จำนวน <?= $grp['total'] ?></span><button onclick='openBorrowSubList(<?= json_encode($grp, JSON_UNESCAPED_UNICODE) ?>)' class="bg-[#0022BA] text-white text-xs px-3.5 py-1 rounded shadow font-semibold">ดู</button></div>
           </div>
           <?php endforeach; ?>
         </div>
       </div>
-
       <div id="borrow-step-2" class="hidden flex-1 overflow-y-auto">
         <div class="p-3 bg-gray-200 flex justify-between items-center border-b">
-          <div>
-            <div class="font-bold text-sm text-gray-800" id="sub-eq-name">ชื่ออุปกรณ์</div>
-          </div>
+          <div class="font-bold text-sm text-gray-800" id="sub-eq-name">ชื่ออุปกรณ์</div>
           <button onclick="backToBorrow1()" class="text-xs text-blue-800 font-bold hover:underline">❮ กลับ</button>
         </div>
         <div id="sub-eq-items" class="divide-y divide-gray-200 bg-white"></div>
       </div>
-
       <div id="borrow-step-3" class="hidden flex-1 p-4 flex flex-col justify-between">
-        <form method="POST" action="liff_app.php?page=borrow" enctype="multipart/form-data" class="h-full flex flex-col justify-between">
-          <input type="hidden" name="action" value="borrow">
-          <input type="hidden" name="eq_id" id="borrow-form-eq-id">
-
+        <form method="POST" action="liff_app.php?page=borrow" enctype="multipart/form-data" class="h-full flex flex-col justify-between" id="form-borrow" onsubmit="return confirmSubmit(event, 'borrow')">
+          <input type="hidden" name="action" value="borrow"><input type="hidden" name="eq_id" id="borrow-form-eq-id">
           <div class="bg-gray-200 p-4 rounded-xl shadow-inner space-y-3">
             <div class="text-center font-bold text-sm text-gray-800" id="borrow-selected-title">อุปกรณ์ที่เลือก</div>
             
+            <!-- 1. วันที่ยืม (ล็อกให้เป็นแค่วันนี้เท่านั้น) -->
             <div>
-              <label class="block text-xs font-semibold text-gray-700 mb-1">วันที่ยืม 🗓️</label>
-              <input type="date" name="borrow_date" id="borrow-date-input" value="<?= date('Y-m-d') ?>" class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+                <label class="block text-xs font-semibold text-gray-700 mb-1">วันที่ยืม 🗓️</label>
+                <input type="date" name="borrow_date" id="borrow-date-input" 
+                       value="<?= $todayStr ?>" 
+                       min="<?= $todayStr ?>" max="<?= $todayStr ?>" readonly
+                       class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none shadow-sm">
+                <p class="text-[10px] text-gray-500 mt-1">* สามารถทำรายการยืมได้เฉพาะวันที่ปัจจุบันเท่านั้น</p>
+            </div>
+            
+            <!-- 2. วันที่คืน (เลือกได้เฉพาะวันนี้ ถึง 3 วันข้างหน้า) -->
+            <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1">กำหนดส่งคืน 📅</label>
+                <input type="date" name="due_date" id="due-date-input" 
+                       value="<?= $maxDueStr ?>" 
+                       min="<?= $todayStr ?>" max="<?= $maxDueStr ?>"
+                       class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none shadow-sm">
+                <p class="text-[10px] text-gray-500 mt-1">* เลือกวันส่งคืนล่วงหน้าได้ไม่เกิน 3 วัน</p>
             </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 mb-1">กำหนดส่งคืน 📅</label>
-              <input type="date" name="due_date" id="due-date-input" value="<?= date('Y-m-d', strtotime('+3 days')) ?>" class="w-full bg-white border border-gray-400 text-gray-800 text-xs p-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 mb-1">ถ่ายรูปบัตรนักศึกษาคู่กับอุปกรณ์ 🖼️</label>
+            <div><label class="block text-xs font-semibold text-gray-700 mb-1">ถ่ายรูปบัตรนักศึกษาคู่กับอุปกรณ์ 🖼️</label>
               <div class="flex border border-gray-400 bg-white rounded overflow-hidden">
-                <label class="bg-gray-300 border-r border-gray-400 text-xs px-3 py-2 cursor-pointer hover:bg-gray-400 font-semibold flex-shrink-0">
-                  เลือกไฟล์
-                  <input type="file" name="borrow_image" accept="image/*" required class="hidden" onchange="previewBorrowFile(this)">
-                </label>
+                <label class="bg-gray-300 border-r border-gray-400 text-xs px-3 py-2 cursor-pointer hover:bg-gray-400 font-semibold flex-shrink-0">เลือกไฟล์<input type="file" name="borrow_image" accept="image/*" required class="hidden" onchange="previewBorrowFile(this)"></label>
                 <span id="borrow-file-label" class="text-[11px] text-gray-500 p-2 truncate">ยังไม่ได้เลือกไฟล์</span>
               </div>
             </div>
           </div>
-
           <div class="space-y-2 mt-4">
             <button type="submit" class="w-full bg-[#0022BA] hover:bg-blue-900 text-white py-2.5 rounded text-sm font-bold shadow transition">ส่งคำขอยืม</button>
             <button type="button" onclick="backToBorrow2()" class="w-full bg-gray-300 text-gray-700 py-2 rounded text-xs font-bold transition">ย้อนกลับ</button>
@@ -328,15 +291,12 @@ $historyList =$histStmt->fetchAll();
       </div>
     </div>
 
-    <!-- ==================== TAB 2: หน้าคืนอุปกรณ์ ==================== -->
+    <!-- TAB 2: คืนอุปกรณ์ -->
     <div id="tab-content-return" class="tab-view flex-1 flex flex-col <?= $page !== 'return' ? 'hidden' : '' ?>">
       <div id="return-list-view" class="p-3 space-y-2 flex-1 overflow-y-auto">
         <?php if (!empty($borrowList)): ?>
-        <div class="sticky top-0 bg-gray-100 pb-2 z-10">
-          <input type="text" id="search-return" onkeyup="searchReturn()" placeholder="🔍 ค้นหาอุปกรณ์ที่ต้องการคืน..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm">
-        </div>
+        <div class="sticky top-0 bg-gray-100 pb-2 z-10"><input type="text" id="search-return" onkeyup="searchReturn()" placeholder="🔍 ค้นหาอุปกรณ์ที่ต้องการคืน..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 shadow-sm"></div>
         <?php endif; ?>
-
         <?php if (empty($borrowList)): ?>
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีรายการอุปกรณ์ที่ค้างคืนในขณะนี้</div>
         <?php else: ?>
@@ -347,36 +307,27 @@ $historyList =$histStmt->fetchAll();
             <div>
               <div class="font-bold text-sm text-gray-800 eq-name-label"><?= htmlspecialchars($bl['eq_name']) ?></div>
               <div class="text-xs text-gray-500">รหัส: <?= htmlspecialchars($bl['eq_code']) ?> กำหนดคืน: <?= date('d/m/Y', strtotime($bl['due_time'])) ?></div>
-              <?php if ($isLate): ?>
-                <span class="text-[10px] text-red-600 font-bold">เกินกำหนดส่งคืน</span>
-              <?php endif; ?>
+              <?php if ($isLate): ?><span class="text-[10px] text-red-600 font-bold">เกินกำหนดส่งคืน</span><?php endif; ?>
             </div>
             <button onclick="openReturnConfirm(<?= $bl['trans_id'] ?>, '<?= htmlspecialchars($bl['eq_name']) ?>', '<?= htmlspecialchars($bl['eq_code']) ?>')" class="bg-[#B71C1C] hover:bg-red-800 text-white text-xs px-3.5 py-1.5 rounded font-bold shadow">คืน</button>
           </div>
           <?php endforeach; ?>
         <?php endif; ?>
       </div>
-
       <div id="return-confirm-view" class="hidden p-4 flex-1 flex flex-col justify-between">
-        <form method="POST" action="liff_app.php?page=return" enctype="multipart/form-data" class="h-full flex flex-col justify-between">
-          <input type="hidden" name="action" value="return">
-          <input type="hidden" name="trans_id" id="return-form-trans-id">
-
+        <form method="POST" action="liff_app.php?page=return" enctype="multipart/form-data" class="h-full flex flex-col justify-between" id="form-return" onsubmit="return confirmSubmit(event, 'return')">
+          <input type="hidden" name="action" value="return"><input type="hidden" name="trans_id" id="return-form-trans-id">
           <div class="bg-gray-200 p-4 rounded-xl shadow-inner space-y-3">
             <div class="text-center font-bold text-sm text-gray-800" id="return-selected-title">คืนอุปกรณ์</div>
             <div>
               <label class="block text-xs font-semibold text-gray-700 mb-1">ถ่ายรูปสภาพอุปกรณ์ที่ส่งคืน</label>
               <div class="flex border border-gray-400 bg-white rounded overflow-hidden">
-                <label class="bg-gray-300 border-r border-gray-400 text-xs px-3 py-2 cursor-pointer hover:bg-gray-400 font-semibold flex-shrink-0">
-                  ถ่ายภาพ / เลือกรูป
-                  <input type="file" name="return_image" accept="image/*" required class="hidden" onchange="previewReturnFile(this)">
-                </label>
+                <label class="bg-gray-300 border-r border-gray-400 text-xs px-3 py-2 cursor-pointer hover:bg-gray-400 font-semibold flex-shrink-0">ถ่ายภาพ / เลือกรูป<input type="file" name="return_image" accept="image/*" required class="hidden" onchange="previewReturnFile(this)"></label>
                 <span id="return-file-label" class="text-[11px] text-gray-500 p-2 truncate">ยังไม่ได้เลือกรูปถ่าย</span>
               </div>
               <p class="text-[10px] text-gray-500 mt-1">* รูปถ่ายจะถูกนำไปตรวจสภาพการชำรุดของอุปกรณ์</p>
             </div>
           </div>
-
           <div class="space-y-2 mt-4">
             <button type="submit" class="w-full bg-[#B71C1C] hover:bg-red-800 text-white py-2.5 rounded text-sm font-bold shadow transition">ส่งคำขอคืน</button>
             <button type="button" onclick="cancelReturnConfirm()" class="w-full bg-gray-300 text-gray-700 py-2 rounded text-xs font-bold transition">ยกเลิก</button>
@@ -385,13 +336,13 @@ $historyList =$histStmt->fetchAll();
       </div>
     </div>
 
-    <!-- ==================== TAB 3: หน้าประวัติ ==================== -->
+    <!-- TAB 3: ประวัติ -->
     <div id="tab-content-history" class="tab-view flex-1 flex flex-col <?= $page !== 'history' ? 'hidden' : '' ?>">
-      <div class="grid grid-cols-4 bg-gray-200 text-[11px] font-semibold text-gray-700 border-b">
+      <div class="grid grid-cols-4 bg-gray-200 text-[11px] font-semibold text-gray-700 border-b text-center">
         <button onclick="filterHistoryCards('all', this)" class="hist-nav py-2.5 bg-[#0022BA] text-white">ทั้งหมด</button>
-        <button onclick="filterHistoryCards('borrowed', this)" class="hist-nav py-2.5">กำลังยืม</button>
-        <button onclick="filterHistoryCards('returned', this)" class="hist-nav py-2.5">คืนแล้ว</button>
-        <button onclick="filterHistoryCards('overdue', this)" class="hist-nav py-2.5">เกินกำหนด</button>
+        <button onclick="filterHistoryCards('borrowed', this)" class="hist-nav py-2.5 text-gray-700">กำลังยืม</button>
+        <button onclick="filterHistoryCards('returned', this)" class="hist-nav py-2.5 text-gray-700">คืนแล้ว</button>
+        <button onclick="filterHistoryCards('overdue', this)" class="hist-nav py-2.5 text-gray-700">เกินกำหนด</button>
       </div>
 
       <div class="p-3 space-y-2.5 flex-1 overflow-y-auto bg-gray-50">
@@ -399,21 +350,44 @@ $historyList =$histStmt->fetchAll();
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีประวัติการทำรายการ</div>
         <?php else: ?>
           <?php foreach ($historyList as$h): 
-            $isOver = ($h['trans_status'] === 'overdue' || ($h['payment_status'] &&$h['payment_status'] === 'unpaid'));
+            $isOver = ($h['trans_status'] === 'overdue' || (!empty($h['payment_status']) &&$h['payment_status'] === 'unpaid'));
             $isRet = ($h['trans_status'] === 'returned');
-            $typeClass =$isOver ? 'overdue border-red-500 bg-red-50' : ($isRet ? 'returned border-green-500 bg-green-50' : 'borrowed border-blue-600 bg-blue-50');
+            $isPenB = ($h['trans_status'] === 'pending_borrow');
+            $isPenR = ($h['trans_status'] === 'pending_return');
+            $isRej = ($h['trans_status'] === 'rejected');
+
+            $filterCategory = '';
+            if ($isOver) {$filterCategory = 'filter-overdue';
+            } elseif ($isRet) {$filterCategory = 'filter-returned';
+            } elseif ($isRej) {$filterCategory = 'filter-rejected'; 
+            } else {
+                $filterCategory = 'filter-borrowed'; 
+            }
+
+            if ($isPenB || $isPenR)$typeClass = 'border-yellow-400 bg-yellow-50';
+            elseif ($isRej)$typeClass = 'border-gray-400 bg-gray-100';
+            elseif ($isOver)$typeClass = 'border-red-500 bg-red-50';
+            elseif ($isRet)$typeClass = 'border-green-500 bg-green-50';
+            else $typeClass = 'border-blue-600 bg-blue-50';
           ?>
-          <div class="hist-card <?= $typeClass ?> border-2 rounded-xl p-3 shadow-sm text-xs relative">
+          <div class="hist-card <?= $typeClass ?> <?= $filterCategory ?> border-2 rounded-xl p-3 shadow-sm text-xs relative transition-all duration-200">
             <div class="flex justify-between items-start">
               <div>
                 <h4 class="font-bold text-gray-800"><?= htmlspecialchars($h['eq_name']) ?> (<?= htmlspecialchars($h['eq_code']) ?>)</h4>
-                <p class="text-[10px] text-gray-500 mt-0.5">วันที่ยืม: <?= date('d/m/Y', strtotime($h['borrow_time'])) ?> วันที่คืน: <?= date('d/m/Y', strtotime($h['return_time'])) ?> วันกำหนดคืน: <?= date('d/m/Y', strtotime($h['due_time'])) ?></p>
-                <?php if ($isOver): ?>
-                  <p class="text-xs font-bold text-red-600 mt-1">ค่าปรับ: <?= number_format($h['fine_price'] ?? 20, 0) ?> บาท</p>
-                <?php endif; ?>
+                <p class="text-[10px] text-gray-500 mt-0.5">ส่งคำขอ: <?= date('d/m/Y', strtotime($h['borrow_time'])) ?></p>
+                <?php if ($h['return_time']): ?><p class="text-[10px] text-gray-500">คืนเมื่อ: <?= date('d/m/Y', strtotime($h['return_time'])) ?></p><?php endif; ?>
+                <?php if ($isRej && !empty($h['reject_reason'])): ?><p class="text-[10px] text-red-600 font-bold mt-1">เหตุผล: <?= htmlspecialchars($h['reject_reason']) ?></p><?php endif; ?>
+                <?php if ($isOver && !empty($h['fine_price'])): ?><p class="text-xs font-bold text-red-600 mt-1">ค่าปรับ: <?= number_format($h['fine_price'], 0) ?> บาท</p><?php endif; ?>
               </div>
-              <span class="text-[9px] font-bold px-2 py-0.5 rounded text-white <?= $isOver ? 'bg-red-600' : ($isRet ? 'bg-green-600' : 'bg-blue-600') ?>">
-                <?= $isOver ? 'เกินกำหนด' : ($isRet ? 'คืนแล้ว' : 'กำลังยืม') ?>
+              <span class="text-[9px] font-bold px-2 py-0.5 rounded text-white <?= $isPenB || $isPenR ? 'bg-yellow-500' : ($isRej ? 'bg-gray-500' : ($isOver ? 'bg-red-600' : ($isRet ? 'bg-green-600' : 'bg-blue-600'))) ?>">
+                <?php 
+                  if ($isPenB) echo "รออนุมัติยืม";
+                  elseif ($isPenR) echo "รออนุมัติคืน";
+                  elseif ($isRej) echo "ไม่อนุมัติ";
+                  elseif ($isOver) echo "เกินกำหนด";
+                  elseif ($isRet) echo "คืนแล้ว";
+                  else echo "กำลังใช้งาน";
+                ?>
               </span>
             </div>
           </div>
@@ -423,18 +397,11 @@ $historyList =$histStmt->fetchAll();
     </div>
 
     <!-- Bottom Navbar -->
-    <div class="fixed bottom-0 w-full max-w-sm bg-white border-t border-gray-300 grid grid-cols-3 text-center text-xs py-2 shadow-lg">
-      <button onclick="navigateTab('borrow')" id="nav-btn-borrow" class="flex flex-col items-center <?= $page === 'borrow' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>">
-        <span class="text-base">📦</span><span>ยืมอุปกรณ์</span>
-      </button>
-      <button onclick="navigateTab('return')" id="nav-btn-return" class="flex flex-col items-center <?= $page === 'return' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>">
-        <span class="text-base">🔄</span><span>คืนอุปกรณ์</span>
-      </button>
-      <button onclick="navigateTab('history')" id="nav-btn-history" class="flex flex-col items-center <?= $page === 'history' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>">
-        <span class="text-base">📋</span><span>ประวัติการยืม</span>
-      </button>
+    <div class="fixed bottom-0 w-full max-w-sm bg-white border-t border-gray-300 grid grid-cols-3 text-center text-xs py-2 shadow-lg z-50">
+      <button onclick="navigateTab('borrow')" id="nav-btn-borrow" class="flex flex-col items-center <?= $page === 'borrow' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>"><span class="text-base">📦</span><span>ยืมอุปกรณ์</span></button>
+      <button onclick="navigateTab('return')" id="nav-btn-return" class="flex flex-col items-center <?= $page === 'return' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>"><span class="text-base">🔄</span><span>คืนอุปกรณ์</span></button>
+      <button onclick="navigateTab('history')" id="nav-btn-history" class="flex flex-col items-center <?= $page === 'history' ? 'text-blue-700 font-bold' : 'text-gray-500' ?>"><span class="text-base">📋</span><span>ประวัติ</span></button>
     </div>
-
   </div>
 
   <script>
@@ -443,73 +410,100 @@ $historyList =$histStmt->fetchAll();
       document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
       document.querySelectorAll('div.fixed button').forEach(b => b.className = "flex flex-col items-center text-gray-500");
       document.getElementById(`nav-btn-${tabName}`).className = "flex flex-col items-center text-blue-700 font-bold";
-      const titles = { borrow: '📦 ยืมอุปกรณ์กีฬา', return: '🔄 คืนอุปกรณ์', history: '📋 ประวัติการยืม-คืน' };
+      const titles = { borrow: '📦 ยืมอุปกรณ์กีฬา', return: '🔄 คืนอุปกรณ์', history: '📋 ประวัติ' };
       document.getElementById('app-header-title').innerText = titles[tabName];
     }
-
+    
     function openBorrowSubList(grp) {
       document.getElementById('sub-eq-name').innerText = grp.eq_name;
-      const list = document.getElementById('sub-eq-items');
-      list.innerHTML = '';
+      const list = document.getElementById('sub-eq-items'); list.innerHTML = '';
       grp.items.forEach(it => {
         const isAvail = (it.status === 'avaliable');
         list.insertAdjacentHTML('beforeend', `
           <div class="p-3 flex justify-between items-center">
-            <div>
-              <div class="text-sm font-semibold">${it.eq_name}</div>
-              <div class="text-xs text-gray-500">รหัส: ${it.eq_code}</div>
-            </div>
+            <div><div class="text-sm font-semibold">${it.eq_name}</div><div class="text-xs text-gray-500">รหัส: ${it.eq_code}</div></div>
             <div class="flex items-center space-x-2">
-              <span class="text-xs font-bold ${isAvail ? 'text-green-600' : 'text-amber-500'}">${isAvail ? 'พร้อมใช้งาน' : 'ใช้งานอยู่'}</span>
+              <span class="text-xs font-bold ${isAvail ? 'text-green-600' : 'text-amber-500'}">${isAvail ? 'พร้อมใช้งาน' : 'ถูกทำรายการแล้ว'}</span>
               <button ${isAvail ? '' : 'disabled'} onclick="openBorrowConfirm(${it.eq_id}, '${it.eq_name}', '${it.eq_code}')" class="${isAvail ? 'bg-[#0022BA]' : 'bg-gray-400 cursor-not-allowed'} text-white text-xs px-3.5 py-1 rounded shadow font-semibold">ยืม</button>
             </div>
           </div>
         `);
       });
-      document.getElementById('borrow-step-1').classList.add('hidden');
-      document.getElementById('borrow-step-2').classList.remove('hidden');
+      document.getElementById('borrow-step-1').classList.add('hidden'); document.getElementById('borrow-step-2').classList.remove('hidden');
     }
-
+    
     function backToBorrow1() { document.getElementById('borrow-step-2').classList.add('hidden'); document.getElementById('borrow-step-1').classList.remove('hidden'); }
+    
     function openBorrowConfirm(eqId, name, code) {
       document.getElementById('borrow-form-eq-id').value = eqId;
       document.getElementById('borrow-selected-title').innerHTML = `${name}<br><span class="text-blue-800 font-bold">${code}</span>`;
-      document.getElementById('borrow-step-2').classList.add('hidden');
-      document.getElementById('borrow-step-3').classList.remove('hidden');
+      document.getElementById('borrow-step-2').classList.add('hidden'); document.getElementById('borrow-step-3').classList.remove('hidden');
     }
+    
     function backToBorrow2() { document.getElementById('borrow-step-3').classList.add('hidden'); document.getElementById('borrow-step-2').classList.remove('hidden'); }
-
+    
     function openReturnConfirm(transId, name, code) {
       document.getElementById('return-form-trans-id').value = transId;
       document.getElementById('return-selected-title').innerHTML = `ยืนยันคืน: ${name}<br><span class="text-blue-800 font-bold">${code}</span>`;
-      document.getElementById('return-list-view').classList.add('hidden');
-      document.getElementById('return-confirm-view').classList.remove('hidden');
+      document.getElementById('return-list-view').classList.add('hidden'); document.getElementById('return-confirm-view').classList.remove('hidden');
     }
+    
     function cancelReturnConfirm() { document.getElementById('return-confirm-view').classList.add('hidden'); document.getElementById('return-list-view').classList.remove('hidden'); }
-
+    
     function previewBorrowFile(input) { if (input.files && input.files[0]) document.getElementById('borrow-file-label').innerText = input.files[0].name; }
     function previewReturnFile(input) { if (input.files && input.files[0]) document.getElementById('return-file-label').innerText = input.files[0].name; }
+    
+    function searchBorrow() { const input = document.getElementById('search-borrow').value.toLowerCase(); document.querySelectorAll('.borrow-group-item').forEach(item => { item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none'; }); }
+    function searchReturn() { const input = document.getElementById('search-return').value.toLowerCase(); document.querySelectorAll('.return-item').forEach(item => { item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none'; }); }
 
     function filterHistoryCards(type, btn) {
-      document.querySelectorAll('.hist-nav').forEach(b => b.className = "hist-nav py-2.5");
-      btn.className = "hist-nav py-2.5 bg-[#0022BA] text-white";
+      document.querySelectorAll('.hist-nav').forEach(b => {
+          b.className = "hist-nav py-2.5 text-gray-700 transition-colors";
+      });
+      btn.className = "hist-nav py-2.5 bg-[#0022BA] text-white transition-colors";
+
       document.querySelectorAll('.hist-card').forEach(c => {
-        if (type === 'all') c.classList.remove('hidden');
-        else c.classList.contains(type) ? c.classList.remove('hidden') : c.classList.add('hidden');
+        if (type === 'all') {
+            c.classList.remove('hidden');
+        } else {
+            if (c.classList.contains('filter-' + type)) {
+                c.classList.remove('hidden');
+            } else {
+                c.classList.add('hidden');
+            }
+        }
       });
     }
 
-    function searchBorrow() {
-      const input = document.getElementById('search-borrow').value.toLowerCase();
-      document.querySelectorAll('.borrow-group-item').forEach(item => {
-        item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none';
-      });
-    }
-
-    function searchReturn() {
-      const input = document.getElementById('search-return').value.toLowerCase();
-      document.querySelectorAll('.return-item').forEach(item => {
-        item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none';
+    // ฟังก์ชันเปิด Pop-up ก่อนการส่งฟอร์ม ยืม/คืน
+    function confirmSubmit(e, type) {
+      e.preventDefault(); 
+      const form = e.target;
+      
+      let title = type === 'borrow' ? 'ยืนยันส่งคำขอยืม?' : 'ยืนยันส่งคำขอคืน?';
+      let text = type === 'borrow' ? 'ตรวจสอบข้อมูลและรูปถ่ายให้ถูกต้องก่อนส่งคำขอ' : 'กรุณาตรวจสอบรูปถ่ายสภาพอุปกรณ์ให้ชัดเจน';
+      let confirmColor = type === 'borrow' ? '#0022BA' : '#B71C1C';
+      
+      Swal.fire({
+        title: title,
+        text: text,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: confirmColor,
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'ยืนยันส่งคำขอ',
+        cancelButtonText: 'ยกเลิก',
+        reverseButtons: true 
+      }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'กำลังอัปโหลดข้อมูล...',
+                text: 'กรุณารอสักครู่ ห้ามปิดหน้านี้',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+            form.submit(); 
+        }
       });
     }
   </script>

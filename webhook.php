@@ -28,8 +28,12 @@ if (!is_null($events['events'])) {
             $imageBinary = curl_exec($ch);
             curl_close($ch);
             
-            $tempPath = __DIR__ . "/user/uploads/slip_{$messageId}.jpg";
+            // กำหนดชื่อไฟล์และพาร์ทสำหรับเก็บรูป
+            $fileName = "slip_{$messageId}.jpg";
+            $tempPath = __DIR__ . "/user/uploads/" . $fileName;
             file_put_contents($tempPath, $imageBinary);
+
+            $keepImage = false; // ตัวแปรสำหรับเช็คว่าจะเก็บรูปไว้หรือไม่
 
             // 2. ส่งตรวจ SlipOK
             $cFile = curl_file_create($tempPath);
@@ -44,7 +48,7 @@ if (!is_null($events['events'])) {
             // 3. ตรวจผลและอัปเดตฐานข้อมูล
             if (isset($slipokResponse['success']) && $slipokResponse['success'] == true) {
 
-                // ค้นหารายการค่าปรับที่ยังไม่จ่าย เพิ่ม t.trans_id เข้ามาใน SELECT ด้วย
+                // ค้นหารายการค่าปรับที่ยังไม่จ่าย
                 $stmtF = $pdo->prepare("
                     SELECT f.fine_id, f.price, t.trans_id 
                     FROM equipment_fines f 
@@ -60,12 +64,15 @@ if (!is_null($events['events'])) {
                     $transferAmount = $slipokResponse['data']['amount'];
                     
                     if ($transferAmount >= $fine['price']) {
-                        // 1. อัปเดตสถานะบิลค่าปรับเป็นจ่ายแล้ว
-                        $pdo->prepare("UPDATE equipment_fines SET payment_status = 'paid', slipok_status = 'verified', paid_time = NOW() WHERE fine_id = ?")->execute([$fine['fine_id']]);
+                        // 1. อัปเดตสถานะบิลค่าปรับเป็นจ่ายแล้ว พร้อมบันทึกชื่อไฟล์สลิปลง slip_img
+                        $pdo->prepare("UPDATE equipment_fines SET payment_status = 'paid', slipok_status = 'verified', paid_time = NOW(), slip_img = ? WHERE fine_id = ?")
+                            ->execute([$fileName, $fine['fine_id']]);
                         
                         // 2. อัปเดตสถานะ Transaction จาก overdue เป็น returned
-                        $pdo->prepare("UPDATE transactions SET trans_status = 'returned' WHERE trans_id = ?")->execute([$fine['trans_id']]);
+                        $pdo->prepare("UPDATE transactions SET trans_status = 'returned' WHERE trans_id = ?")
+                            ->execute([$fine['trans_id']]);
                         
+                        $keepImage = true; // ชำระสำเร็จ เปลี่ยนสถานะเป็นเก็บรูปไว้ (ไม่ให้ลบ)
                         $replyText = "ตรวจสอบสำเร็จ! ระบบได้รับชำระค่าปรับจำนวน {$transferAmount} บาท ของคุณเรียบร้อยแล้ว \nขอบคุณที่ใช้บริการ";
                     } else {
                         // ยอดเงินไม่ตรง
@@ -79,9 +86,15 @@ if (!is_null($events['events'])) {
                 $reason = $slipokResponse['message'] ?? 'ไม่ทราบสาเหตุ';
                 $replyText = "สลิปของท่านไม่ถูกต้อง! ❌\n(เหตุผล: {$reason})\nกรุณาตรวจสอบและส่งใหม่อีกครั้งครับ";
             }
-            unlink($tempPath); // ลบไฟล์รูป Temp ทิ้งเพื่อประหยัดพื้นที่
+            
+            // 4. ลบไฟล์รูปทิ้ง "เฉพาะ" กรณีที่ไม่สำเร็จหรือไม่ใช่การจ่ายค่าปรับที่ถูกต้อง
+            if (!$keepImage) {
+                if (file_exists($tempPath)) {
+                    unlink($tempPath); 
+                }
+            }
 
-            // 4. ตอบกลับแชท LINE
+            // 5. ตอบกลับแชท LINE
             $post_data = json_encode(['replyToken' => $replyToken, 'messages' => [['type' => 'text', 'text' => $replyText]]]);
             $ch3 = curl_init('https://api.line.me/v2/bot/message/reply');
             curl_setopt($ch3, CURLOPT_CUSTOMREQUEST, "POST");

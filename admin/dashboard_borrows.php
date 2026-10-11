@@ -46,9 +46,9 @@ $stmtStat = $pdo->prepare("
 $stmtStat->execute($params);
 $summary = $stmtStat->fetch(PDO::FETCH_ASSOC);
 
-// ดึงรายการประวัติ พร้อมค่าปรับ
+// ดึงรายการประวัติ พร้อมค่าปรับและรูปสลิป (slip_img)
 $stmtList = $pdo->prepare("
-    SELECT t.*, u.full_name, u.student_id, e.eq_code, e.eq_name, f.price as fine_amount, f.payment_status
+    SELECT t.*, u.full_name, u.student_id, e.eq_code, e.eq_name, f.price as fine_amount, f.payment_status, f.slip_img
     FROM transactions t
     LEFT JOIN user u ON t.user_id = u.user_id
     LEFT JOIN sport_equipment e ON t.eq_id = e.eq_id
@@ -66,7 +66,7 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>รายการยืมทั้งหมด & สรุปรายงาน | ศูนย์กีฬา ม.อ.ตรัง</title>
     <style>
-        @media print { .sidebar, .filter-card, .btn-print, .btn-back { display: none !important; } .main-content { padding: 0 !important; background: #fff !important; } }
+        @media print { .sidebar, .filter-card, .btn-print, .btn-back, .hide-print { display: none !important; } .main-content { padding: 0 !important; background: #fff !important; } }
         .card-summary { border-radius: 12px; border: none; }
     </style>
 </head>
@@ -84,7 +84,6 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
 
-        <!-- กล่องค้นหา & ตัวกรอง (เหมือนเดิม) -->
         <div class="card p-3 mb-4 filter-card border-0 shadow-sm bg-white">
             <form method="GET" action="dashboard_borrows.php" class="row g-3">
                 <div class="col-md-4">
@@ -116,14 +115,12 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
             </form>
         </div>
 
-        <!-- การ์ดสรุป -->
         <div class="row g-3 mb-4">
             <div class="col-md-4"><div class="card card-summary bg-primary text-white p-3 shadow-sm"><div class="small opacity-75">ทำรายการทั้งหมด</div><div class="fs-3 fw-bold mt-1"><?= number_format($summary['total_trans'] ?? 0) ?> ครั้ง</div></div></div>
             <div class="col-md-4"><div class="card card-summary bg-success text-white p-3 shadow-sm"><div class="small opacity-75">คืนเรียบร้อยแล้ว</div><div class="fs-3 fw-bold mt-1"><?= number_format($summary['total_returned'] ?? 0) ?> รายการ</div></div></div>
             <div class="col-md-4"><div class="card card-summary bg-warning text-dark p-3 shadow-sm"><div class="small fw-semibold opacity-75">ค้างส่ง / เกินกำหนด</div><div class="fs-3 fw-bold mt-1"><?= number_format($summary['total_overdue'] ?? 0) ?> รายการ</div></div></div>
         </div>
 
-        <!-- ตารางข้อมูล -->
         <div class="card p-0 overflow-hidden border-0 shadow-sm bg-white">
             <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                 <h6 class="fw-bold mb-0 text-dark">รายการยืม-คืนอุปกรณ์</h6>
@@ -181,11 +178,19 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
                             <td>
                                 <?php if ($row['fine_amount'] > 0): ?>
                                     <div class="fw-bold text-danger"><?= number_format($row['fine_amount'], 2) ?> ฿</div>
-                                    <?php if ($row['payment_status'] === 'paid'): ?>
-                                        <span class="badge bg-success bg-opacity-10 text-success border border-success" style="font-size: 10px;">ชำระแล้ว</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-danger bg-opacity-10 text-danger border border-danger" style="font-size: 10px;">ค้างชำระ</span>
-                                    <?php endif; ?>
+                                    <div class="d-flex align-items-center mt-1 gap-1">
+                                        <?php if ($row['payment_status'] === 'paid'): ?>
+                                            <span class="badge bg-success bg-opacity-10 text-success border border-success" style="font-size: 10px;">ชำระแล้ว</span>
+                                            <!-- เพิ่มปุ่มสำหรับกดดูรูปภาพสลิป -->
+                                            <?php if (!empty($row['slip_img'])): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-info py-0 px-2 hide-print" style="font-size: 10px; border-radius: 4px;" onclick="viewSlipImage('<?= htmlspecialchars($row['slip_img']) ?>')">
+                                                    <i class="bi bi-receipt"></i> ดูสลิป
+                                                </button>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger" style="font-size: 10px;">ค้างชำระ</span>
+                                        <?php endif; ?>
+                                    </div>
                                 <?php else: ?>
                                     <span class="text-muted small">-</span>
                                 <?php endif; ?>
@@ -197,6 +202,22 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
+
+    <!-- ============================== Modal แสดงรูปภาพสลิป ============================== -->
+    <div class="modal fade" id="viewSlipModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header border-bottom">
+                    <h6 class="modal-title fw-bold text-dark"><i class="bi bi-receipt me-2 text-primary"></i>รูปภาพสลิปโอนเงิน</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3 text-center bg-light">
+                    <img id="previewSlipImg" src="" class="img-fluid rounded shadow-sm" style="max-height: 400px; width: auto; object-fit: contain;">
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function toggleFilterInputs() {
@@ -204,6 +225,13 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
             document.querySelectorAll('.filter-input').forEach(el => el.style.display = 'none');
             if (type === 'monthly') document.getElementById('monthlyInput').style.display = 'block';
             else if (type === 'yearly') document.getElementById('yearlyInput').style.display = 'block';
+        }
+
+        // ฟังก์ชันเปิด Modal เพื่อโชว์สลิป
+        function viewSlipImage(imageName) {
+            const basePath = '../user/uploads/'; // พาธรูปภาพที่ webhook บันทึกไว้
+            document.getElementById('previewSlipImg').src = basePath + imageName;
+            new bootstrap.Modal(document.getElementById('viewSlipModal')).show();
         }
     </script>
 </body>
