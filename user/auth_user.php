@@ -51,6 +51,20 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
         }
 
         try {
+            // 1. ดึงข้อมูล User จากฐานข้อมูลก่อน เพื่อเช็คสถานะปัจจุบัน
+            $stmtCheck = $pdo->prepare("SELECT user_id, full_name, role, status FROM user WHERE student_id = ? LIMIT 1");
+            $stmtCheck->execute([$student_id]);
+            $existingUser = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+            // 2. ตรวจสอบเงื่อนไขการบล็อก (Blocker)
+            // หากมีผู้ใช้นี้ในระบบแล้ว และสถานะเป็น inactive หรือ graduated ให้บล็อกการเข้าระบบ
+            if ($existingUser && in_array($existingUser['status'], ['inactive', 'graduated'])) {
+                $_SESSION['login_error'] = "บัญชีของคุณถูกระงับการใช้งาน หรือจบการศึกษาแล้ว ไม่สามารถเข้าสู่ระบบได้";
+                header("Location: login_user.php");
+                exit;
+            }
+
+            // 3. หากไม่มีปัญหา ให้ดำเนินการอัปเดตข้อมูลและสร้าง Session ตามปกติ
             $stmt = $pdo->prepare("
                 INSERT INTO user (line_user_id, student_id, full_name, email, gender, national_id, faculty, campus, enrollment_year, role, status) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'user', 'active')
@@ -62,7 +76,7 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
             ");
             $stmt->execute([$lineUserId, $student_id, $full_name, $email, $gender, $national_id, $faculty, $campus, $enrollment_year]);
 
-            // ดึง ID ของ User
+            // 4. ดึง ID ของ User ล่าสุดเพื่อสร้าง Session
             $stmtGet = $pdo->prepare("SELECT user_id, full_name, role FROM user WHERE student_id = ? LIMIT 1");
             $stmtGet->execute([$student_id]);
             $userRow = $stmtGet->fetch();

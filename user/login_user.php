@@ -67,6 +67,9 @@ unset($_SESSION['login_error']);
             <div class="input-group">
                 <span class="input-group-text bg-light text-muted"><i class="bi bi-lock"></i></span>
                 <input type="password" name="password" id="passwordInput" class="form-control" placeholder="รหัสผ่าน PSU Passport" required>
+                <button type="button" class="btn btn-outline-secondary toggle-password bg-light text-muted" id="togglePasswordBtn" onclick="togglePassword()">
+                    <i class="bi bi-eye" id="togglePasswordIcon"></i>
+                </button>
             </div>
         </div>
 
@@ -91,6 +94,21 @@ unset($_SESSION['login_error']);
         }
     }
     initLiff();
+
+    function togglePassword() {
+        const passwordInput = document.getElementById('passwordInput');
+        const toggleIcon = document.getElementById('togglePasswordIcon');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            toggleIcon.classList.remove('bi-eye');
+            toggleIcon.classList.add('bi-eye-slash');
+        } else {
+            passwordInput.type = 'password';
+            toggleIcon.classList.remove('bi-eye-slash');
+            toggleIcon.classList.add('bi-eye');
+        }
+    }
 </script>
 
 </body>

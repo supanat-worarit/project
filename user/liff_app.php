@@ -23,7 +23,15 @@ if (!is_dir($uploadDir)) {
 
 // Helper Function สำหรับแจ้งเตือนแบบ SweetAlert
 function alertAndRedirect($icon, $title, $text, $btnColor, $redirectUrl) {
-    $action = ($redirectUrl === 'back') ? "window.history.back();" : "window.location.href = '$redirectUrl';";
+    // แยกเงื่อนไขการทำงานว่าต้องเปลี่ยนหน้า หรือ ปิด LIFF ทิ้ง
+    if ($redirectUrl === 'back') {
+        $action = "window.history.back();";
+    } elseif ($redirectUrl === 'liff_close') {
+         $action = "liff.init({ liffId: '" . LIFF_ID . "' }).then(() => { liff.closeWindow(); }).catch((err) => { console.error(err); });";
+    } else {
+        $action = "window.location.href = '$redirectUrl';";
+    }
+    
     echo <<<HTML
     <!DOCTYPE html>
     <html lang="th">
@@ -31,6 +39,7 @@ function alertAndRedirect($icon, $title, $text, $btnColor, $redirectUrl) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600&display=swap" rel="stylesheet">
+        <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <style>
             body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; margin: 0; }
@@ -46,7 +55,9 @@ function alertAndRedirect($icon, $title, $text, $btnColor, $redirectUrl) {
             Swal.fire({
                 icon: '$icon', title: '$title', text: '$text',
                 confirmButtonText: 'ตกลง', confirmButtonColor: '$btnColor', allowOutsideClick: false
-            }).then(() => { $action });
+            }).then(() => { 
+                $action 
+            });
         </script>
     </body>
     </html>
@@ -82,7 +93,7 @@ if ($fineData && $fineData['total_fine'] > 0) {
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
         curl_exec($ch); curl_close($ch);
     }
-    alertAndRedirect('warning', 'มียอดค้างชำระ!', "คุณมีค่าปรับค้างชำระ {$fineAmount} บาท กรุณาชำระเงินผ่านแชท LINE ก่อนทำรายการ", '#dc3545', 'back');
+    alertAndRedirect('warning', 'มียอดค้างชำระ!', "คุณมีค่าปรับค้างชำระ {$fineAmount} บาท กรุณาชำระเงินผ่านแชท LINE ก่อนทำรายการ", '#dc3545', 'liff_close');
 }
 
 $uStmt = $pdo->prepare("SELECT * FROM `user` WHERE user_id = ? LIMIT 1");
@@ -224,7 +235,7 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
           <span class="text-[11px] bg-blue-900 border border-blue-400 px-2 py-0.5 rounded text-blue-100 font-mono">
             <?= htmlspecialchars($user['student_id'] ?? $user['user_id']) ?>
           </span>
-          <a href="logout.php" onclick="return confirm('ต้องการออกจากระบบหรือไม่?')" class="text-[11px] bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded font-bold transition">ออกจากระบบ</a>
+          <a href="logout.php" onclick="confirmLogout(event)" class="text-[11px] bg-red-600 hover:bg-red-700 text-white px-2 py-0.5 rounded font-bold transition">ออกจากระบบ</a>
         </div>
       </div>
       <div class="text-[11px] text-blue-200 mt-1 truncate">ผู้ใช้งาน: <?= htmlspecialchars($user['full_name']) ?></div>
@@ -503,6 +514,26 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
                 didOpen: () => { Swal.showLoading(); }
             });
             form.submit(); 
+        }
+      });
+    }
+
+    // ฟังก์ชันยืนยันการออกจากระบบด้วย SweetAlert2
+    function confirmLogout(e) {
+      e.preventDefault(); // หยุดการลิ้งก์ชั่วคราว
+      Swal.fire({
+        title: 'ออกจากระบบ?',
+        text: 'คุณต้องการออกจากระบบใช่หรือไม่',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'ใช่, ออกจากระบบ',
+        cancelButtonText: 'ยกเลิก',
+        reverseButtons: true
+      }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = 'logout.php'; // ยืนยันแล้วค่อยไปหน้า logout
         }
       });
     }

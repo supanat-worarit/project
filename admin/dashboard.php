@@ -56,18 +56,19 @@ $totalFines = $stmtFines->fetchColumn() ?? 0;
 $stmtDamaged = $pdo->query("SELECT COUNT(*) FROM sport_equipment WHERE status IN ('damaged', 'maintenance')");
 $totalDamaged = $stmtDamaged->fetchColumn();
 
-// 5. สถิติอุปกรณ์ที่ถูกยืมบ่อย Top 5 ตามช่วงเวลา
-$stmtTopEq = $pdo->prepare("
-    SELECT e.eq_name, COUNT(t.trans_id) as borrow_count 
+// 5. สถิติประเภทอุปกรณ์ที่ถูกยืมบ่อย Top 5 ตามช่วงเวลา
+$stmtTopCat = $pdo->prepare("
+    SELECT c.category_name, COUNT(t.trans_id) as borrow_count 
     FROM transactions t
     JOIN sport_equipment e ON t.eq_id = e.eq_id
+    JOIN sport_categories c ON e.category_id = c.category_id
     WHERE {$timeSql}
-    GROUP BY t.eq_id, e.eq_name
+    GROUP BY c.category_id, c.category_name
     ORDER BY borrow_count DESC
     LIMIT 5
 ");
-$stmtTopEq->execute([$timeParam]);
-$topEquipment = $stmtTopEq->fetchAll(PDO::FETCH_ASSOC);
+$stmtTopCat->execute([$timeParam]);
+$topCategories = $stmtTopCat->fetchAll(PDO::FETCH_ASSOC);
 
 // 6. ดึงข้อมูลทำกราฟ (ข้อมูลจริง) แยกตามชั้นปีนักศึกษา
 $current_academic_year = date('Y') + 543; 
@@ -220,18 +221,18 @@ foreach ($categories as $cat) {
             <div class="col-lg-5">
                 <div class="card card-custom p-4 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-graph-up-arrow me-2"></i>อุปกรณ์ที่ถูกยืมบ่อย (Top 5)</h6>
+                        <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-graph-up-arrow me-2"></i>ประเภทอุปกรณ์ที่ถูกยืมบ่อย (Top 5)</h6>
                         <span class="badge bg-light text-muted border"><?= $displayPeriodText ?></span>
                     </div>
                     <ul class="list-unstyled mb-0">
-                        <?php if (empty($topEquipment)): ?>
+                        <?php if (empty($topCategories)): ?>
                             <li class="text-muted small py-4 text-center">ไม่มีข้อมูลการยืมในช่วงเวลานี้</li>
                         <?php else: ?>
-                            <?php foreach ($topEquipment as $idx => $item): ?>
-                                <li class="d-flex justify-content-between align-items-center py-2.5 <?= ($idx < count($topEquipment) - 1) ? 'border-bottom' : ''; ?>">
+                            <?php foreach ($topCategories as $idx => $item): ?>
+                                <li class="d-flex justify-content-between align-items-center py-2.5 <?= ($idx < count($topCategories) - 1) ? 'border-bottom' : ''; ?>">
                                     <div class="d-flex align-items-center gap-3">
                                         <span class="rank-circle bg-light text-primary border"><?= $idx + 1 ?></span>
-                                        <span class="fw-medium text-dark"><?= htmlspecialchars($item['eq_name']) ?></span>
+                                        <span class="fw-medium text-dark"><?= htmlspecialchars($item['category_name']) ?></span>
                                     </div>
                                     <span class="badge bg-primary text-white rounded-pill px-3 py-1.5 fw-semibold">
                                         <?= $item['borrow_count'] ?> ครั้ง

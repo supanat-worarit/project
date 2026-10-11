@@ -167,9 +167,11 @@ $reportData = $stmtList->fetchAll(PDO::FETCH_ASSOC);
                                     } elseif ($row['trans_status'] === 'overdue' || (!empty($row['due_time']) && strtotime($row['due_time']) < time() && empty($row['return_time']))) {
                                         echo '<span class="badge bg-warning text-dark">ค้างส่ง (เกินกำหนด)</span>';
                                     } elseif ($row['trans_status'] === 'borrowed') {
-                                        echo '<span class="badge bg-primary">กำลังใช้งาน</span>';
+                                        echo '<span class="badge bg-primary">กำลังยืม</span>';
                                     } elseif ($row['trans_status'] === 'rejected') {
                                         echo '<span class="badge bg-danger">ยกเลิก/ไม่อนุมัติ</span>';
+                                    } elseif ($row['trans_status'] === 'pending_borrow') {
+                                        echo '<span class="badge bg-info text-dark">รออนุมัติยืม</span>';
                                     } else {
                                         echo '<span class="badge bg-secondary">' . htmlspecialchars($row['trans_status']) . '</span>';
                                     }

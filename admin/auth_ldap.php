@@ -94,7 +94,7 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
             header("Location: dashboard.php");
             exit;
         } else {
-            $_SESSION['login_error'] = "ยืนยันตัวตนสำเร็จ แต่บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานระบบแอดมิน (Role ไม่ใช่ admin)";
+            $_SESSION['login_error'] = "ยืนยันตัวตนสำเร็จ แต่บัญชีนี้ไม่มีสิทธิ์เข้าใช้งานระบบแอดมิน (Role ไม่ใช่ admin หรือ ถูกระงับการใช้งาน)";
             header("Location: login_ldap.php");
             exit;
         }
