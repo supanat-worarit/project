@@ -97,7 +97,7 @@ unset($_SESSION['login_error']);
             <label class="form-label small fw-semibold">บัญชีผู้ใช้ PSU Passport</label>
             <div class="input-group">
                 <span class="input-group-text bg-light text-muted"><i class="bi bi-person"></i></span>
-                <input type="text" name="username" class="form-control" placeholder="เช่น 66xxxxxxxx หรือ psu account" required autofocus>
+                <input type="text" name="username" class="form-control" placeholder="รหัสนักศึกษา หรือ psu account" required autofocus>
             </div>
         </div>
 
@@ -105,7 +105,7 @@ unset($_SESSION['login_error']);
             <label class="form-label small fw-semibold">รหัสผ่าน (Password)</label>
             <div class="input-group">
                 <span class="input-group-text bg-light text-muted"><i class="bi bi-lock"></i></span>
-                <input type="password" name="password" id="passwordInput" class="form-control" placeholder="xxxxxxx" required>
+                <input type="password" name="password" id="passwordInput" class="form-control" placeholder="รหัสผ่าน PSU Passport" required>
                 <button type="button" class="btn btn-outline-secondary toggle-password bg-light text-muted" id="togglePasswordBtn" onclick="togglePassword()">
                     <i class="bi bi-eye" id="togglePasswordIcon"></i>
                 </button>

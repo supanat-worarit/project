@@ -58,7 +58,7 @@ unset($_SESSION['login_error']);
             <label class="form-label small fw-semibold">รหัสนักศึกษา (PSU Passport)</label>
             <div class="input-group">
                 <span class="input-group-text bg-light text-muted"><i class="bi bi-person"></i></span>
-                <input type="text" name="username" class="form-control" placeholder="รหัสนักศึกษา หรือ username" required autofocus>
+                <input type="text" name="username" class="form-control" placeholder="รหัสนักศึกษา" required autofocus>
             </div>
         </div>
 
