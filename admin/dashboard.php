@@ -165,7 +165,7 @@ foreach ($categories as $cat) {
             </form>
         </div>
 
-        <!-- Metric Stat Cards เปลี่ยนเป็น 4 คอลัมน์ -->
+        <!-- Metric Stat Cards -->
         <div class="row g-3 mb-4">
             <div class="col-md-6 col-lg-3">
                 <a href="dashboard_borrows.php?type=<?= $filter_mode ?>&<?= $filter_mode === 'monthly' ? 'month='.$selected_month : 'year='.$selected_year ?>" class="stat-card stat-blue">
@@ -216,7 +216,7 @@ foreach ($categories as $cat) {
                 </a>
             </div>
         </div>
-
+             <!-- Top 5 -->
         <div class="row g-3 mb-4">
             <div class="col-lg-5">
                 <div class="card card-custom p-4 h-100">
@@ -243,7 +243,7 @@ foreach ($categories as $cat) {
                     </ul>
                 </div>
             </div>
-
+            <!-- กราฟ -->
             <div class="col-lg-7">
                 <div class="card card-custom p-4 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -267,6 +267,7 @@ foreach ($categories as $cat) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+        // การเลือก เดือน หรือ ปี ที่แสดง ภาพรวม
         function toggleFilterMode() {
             const mode = document.getElementById('filterMode').value;
             const monthBox = document.getElementById('monthSelector');
@@ -275,12 +276,13 @@ foreach ($categories as $cat) {
             else { monthBox.style.display = 'block'; yearBox.style.display = 'none'; }
         }
 
+        // สร้างกราฟแท่ง
         <?php if(!empty($categories)): ?>
         const ctxBar = document.getElementById('yearComparisonChart').getContext('2d');
         new Chart(ctxBar, {
             type: 'bar',
             data: {
-                labels: <?= json_encode($categories) ?>,
+                labels: <?= json_encode($categories) ?>, // แปลงเป็น Array ของ JavaScript
                 datasets: [
                     { label: 'ปี 1', data: <?= json_encode($y1Data) ?>, backgroundColor: '#00b4d8' },
                     { label: 'ปี 2', data: <?= json_encode($y2Data) ?>, backgroundColor: '#10b981' },
@@ -288,6 +290,7 @@ foreach ($categories as $cat) {
                     { label: 'ปี 4+', data: <?= json_encode($y4Data) ?>, backgroundColor: '#a855f7' }
                 ]
             },
+            // จัด รูปแบบ
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { position: 'top', labels: { boxWidth: 14, font: { family: 'Prompt', size: 12 } } } },

@@ -1,5 +1,4 @@
 <?php
-// admin/approvals.php
 require_once '../config/auth_check.php';
 require_once '../config/db.php';
 require_once '../config/settings.php'; 
@@ -17,9 +16,7 @@ function sendLineMessage($to, $text) {
     curl_exec($ch); curl_close($ch);
 }
 
-// ==========================================
 // 1. จัดการการกด อนุมัติ / ปฏิเสธ (ใช้รหัส trans_id โดยตรง)
-// ==========================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $trans_id = (int)$_POST['req_id']; // ฟอร์มส่งมาชื่อ req_id แต่จริงๆ คือ trans_id
     $decision = $_POST['decision'];
@@ -264,7 +261,7 @@ $historyList = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Modals (ยังคงเหมือนเดิม แค่ส่งค่า trans_id) -->
+    <!-- Modals  -->
     <div class="modal fade" id="viewEvidenceModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content border-0 shadow"><div class="modal-header border-bottom"><h6 class="modal-title fw-bold text-dark"><i class="bi bi-image me-2"></i>รูปภาพหลักฐานการทำรายการ</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body p-3 text-center bg-light"><img id="previewEvidenceImg" src="" class="img-fluid rounded shadow-sm" style="max-height: 500px; object-fit: contain;"></div></div></div></div>
 
     <div class="modal fade" id="rejectModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content text-dark border-0 shadow"><div class="modal-header border-bottom"><h5 class="fw-bold mb-0 text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>ระบุเหตุผลที่ไม่อนุมัติ</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><form action="approvals.php" method="POST"><div class="modal-body p-4"><input type="hidden" name="action" value="reject_action"><input type="hidden" name="req_id" id="reject_req_id"><input type="hidden" name="decision" value="reject"><div class="p-3 bg-light rounded border mb-3 small"><div class="mb-1"><strong>ผู้ขอทำรายการ:</strong> <span id="reject_user_name" class="text-primary"></span></div><div><strong>อุปกรณ์:</strong> <span id="reject_eq_name" class="text-dark"></span></div></div><div class="mb-3"><label class="form-label fw-semibold">เหตุผลที่ไม่ผ่านการอนุมัติ <span class="text-danger">*</span></label><textarea name="reject_reason" class="form-control" rows="3" required placeholder="เช่น ถ่ายรูปบัตรนักศึกษาไม่ชัดเจน"></textarea></div></div><div class="modal-footer border-top"><button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">ยกเลิก</button><button type="submit" class="btn btn-danger px-4 fw-bold">ยืนยันการปฏิเสธ</button></div></form></div></div></div>
@@ -273,18 +270,19 @@ $historyList = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ดูรูป
         function viewEvidenceImage(imageName) {
             document.getElementById('previewEvidenceImg').src = '../user/uploads/' + imageName;
             new bootstrap.Modal(document.getElementById('viewEvidenceModal')).show();
         }
-
+        // เปิด pop up การปฎิเสธ
         function openRejectModal(reqId, userName, eqDetails) {
             document.getElementById('reject_req_id').value = reqId;
             document.getElementById('reject_user_name').innerText = userName;
             document.getElementById('reject_eq_name').innerText = eqDetails;
             new bootstrap.Modal(document.getElementById('rejectModal')).show();
         }
-
+        // เปิด pop up การอนุมัติ
         function openApproveModal(reqId, userName, eqDetails, reqType) {
             document.getElementById('approve_req_id').value = reqId;
             document.getElementById('approve_user_name').innerText = userName;
@@ -297,7 +295,7 @@ $historyList = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
 
             new bootstrap.Modal(document.getElementById('approveModal')).show();
         }
-
+        // Auto-Refresh ทุก 5 วิ
         setInterval(function() {
             fetch(location.href).then(response => response.text()).then(html => {
                 const doc = new DOMParser().parseFromString(html, 'text/html');

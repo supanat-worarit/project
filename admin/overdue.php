@@ -6,6 +6,7 @@ $search = trim($_GET['search'] ?? '');
 $params = [];
 
 // เงื่อนไข: ค้างส่ง (ยังไม่คืนและเลยเวลา) หรือ ค้างชำระค่าปรับ (payment_status = unpaid)
+// DATEDIFF คำนวณจำนวนวันต่าง
 $sql = "
     SELECT t.*, u.full_name, u.student_id, e.eq_code, e.eq_name,
            DATEDIFF(NOW(), t.due_time) AS days_overdue,
@@ -112,7 +113,7 @@ $overdueList = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 $fineDisplay = number_format($row['fine_amount'], 2) . ' ฿';
                                 $fineNote = '<div class="badge bg-danger bg-opacity-10 text-danger border border-danger mt-1" style="font-size: 10px;">ค้างชำระ</div>';
                             } else {
-                                $estFine = $daysLate * 20; // ประมาณการ วันละ 20 บาท
+                                $estFine = $daysLate * 20; // วันละ 20 บาท
                                 $fineDisplay = '~' . number_format($estFine, 2) . ' ฿';
                                 $fineNote = '<div class="text-muted small mt-1" style="font-size: 10px;">(ค้างชำระ)</div>';
                             }

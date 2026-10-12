@@ -127,6 +127,7 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
     //         exit;
     //     }
     // } 
+    
     // กรณีที่ 3: Username หรือ Password ของ PSU Passport ไม่ถูกต้อง
     else {
         $_SESSION['login_error'] = "เข้าสู่ระบบล้มเหลว: Username หรือ Password ของ PSU Passport ไม่ถูกต้อง";

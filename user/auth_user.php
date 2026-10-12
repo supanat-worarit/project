@@ -1,8 +1,8 @@
 <?php
-// user/auth_user.php
+
 session_start();
 require_once '../config/db.php';
-
+// ส่ง user pass ไปทาง ม.อ. ผ่าน soap ด้วย api และ ส่งข่อมูลนศ.กลับมา || error
 function psupassport_authentication($username, $password)
 {
     $params = array('username' => "$username", 'password' => "$password");
@@ -19,7 +19,7 @@ function psupassport_authentication($username, $password)
         return ["status" => -1, "result" => $e->getMessage()];
     }
 }
-
+// รับค่า จาก ฟอร์ม login
 if (isset($_POST['username']) && isset($_POST['password'])) {
     $username = trim($_POST['username']);
     $password = trim($_POST['password']);
@@ -32,7 +32,7 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
     }
 
     $authen_result = psupassport_authentication($username, $password);
-
+    // นำข้อมูล นศ. ที่เป็น array มาใส่ตัวแปร
     if ($authen_result["status"] === 1 && !empty($authen_result["result"][0])) {
         $data = $authen_result["result"];
 
@@ -47,7 +47,9 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
         // ดึงปีการศึกษา 25xx
         $enrollment_year = null;
         if(strlen($student_id) >= 2) {
-            $enrollment_year = "25" . substr($student_id, 0, 2);
+            $current_be_year = date('Y') + 543;
+            $century_prefix = substr($current_be_year, 0, 2);
+            $enrollment_year = $century_prefix . substr($student_id, 0, 2);
         }
 
         try {
@@ -79,7 +81,7 @@ if (isset($_POST['username']) && isset($_POST['password'])) {
             // 4. ดึง ID ของ User ล่าสุดเพื่อสร้าง Session
             $stmtGet = $pdo->prepare("SELECT user_id, full_name, role FROM user WHERE student_id = ? LIMIT 1");
             $stmtGet->execute([$student_id]);
-            $userRow = $stmtGet->fetch();
+            $userRow = $stmtGet->fetch(); //อ่านข้อมูล user ทีละแถว
 
             $_SESSION['user_id'] = $userRow['user_id'];
             $_SESSION['student_id'] = $student_id;

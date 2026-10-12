@@ -49,33 +49,34 @@ if (isset($_GET['get_user_detail'])) {
     exit;
 }
 
-// ค้นหาและกรองข้อมูลรายชื่อผู้ใช้งาน
-$search = trim($_GET['search'] ?? '');
-$role_filter =$_GET['role'] ?? 'all';
-$status_filter =$_GET['status'] ?? 'all';
+        // ค้นหาและกรองข้อมูลรายชื่อผู้ใช้งาน
+        $search = trim($_GET['search'] ?? '');
+        $role_filter =$_GET['role'] ?? 'all';
+        $status_filter =$_GET['status'] ?? 'all';
 
-$conditions = [];$params = [];
+        $conditions = [];
+        $params = [];
 
-if (!empty($search)) {$conditions[] = "(u.full_name LIKE ? OR u.student_id LIKE ? OR u.email LIKE ? OR u.faculty LIKE ? OR u.campus LIKE ?)";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
-    $params[] = "%$search%";
-}
+        if (!empty($search)) {$conditions[] = "(u.full_name LIKE ? OR u.student_id LIKE ? OR u.email LIKE ? OR u.faculty LIKE ? OR u.campus LIKE ?)";
+            $params[] = "%$search%";
+            $params[] = "%$search%";
+            $params[] = "%$search%";
+            $params[] = "%$search%";
+            $params[] = "%$search%";
+        }
+        // ไม่ได้เลือก สิทธิ์ทั้งหมด
+        if ($role_filter !== 'all') {$conditions[] = "u.role = ?";
+            $params[] =$role_filter;
+        }
+        // ไม่ได้เลือก สถานะทั้งหมด
+        if ($status_filter !== 'all') {$conditions[] = "u.status = ?";
+            $params[] =$status_filter;
+        }
 
-if ($role_filter !== 'all') {$conditions[] = "u.role = ?";
-    $params[] =$role_filter;
-}
-
-if ($status_filter !== 'all') {$conditions[] = "u.status = ?";
-    $params[] =$status_filter;
-}
-
-$whereSql = !empty($conditions) ? "WHERE " . implode(" AND ", $conditions) : "";
-$stmt =$pdo->prepare("SELECT u.* FROM user u $whereSql ORDER BY u.user_id DESC");
-$stmt->execute($params);
-$userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
+        $whereSql = !empty($conditions) ? "WHERE " . implode(" AND ", $conditions) : ""; // implode เชื่อมเงื่อนไขต่างๆ หรือ ค่าว่าง
+        $stmt =$pdo->prepare("SELECT u.* FROM user u $whereSql ORDER BY u.user_id DESC");
+        $stmt->execute($params);
+        $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -94,7 +95,7 @@ $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
                 <p class="text-muted small mb-0">ตรวจสอบรายชื่อผู้ใช้งานในระบบ กำหนดสิทธิ์ และดูประวัติการทำรายการ</p>
             </div>
         </div>
-
+        <!-- แจ้งเตือนทำรายการสำเร็จ -->
         <?php if (isset($_SESSION['success_msg'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle-fill me-2"></i><?= htmlspecialchars($_SESSION['success_msg']) ?>
@@ -102,7 +103,7 @@ $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
             <?php unset($_SESSION['success_msg']); ?>
         <?php endif; ?>
-
+            <!-- แทบ ค้นหา -->
         <div class="card card-custom p-3 border-0 shadow-sm mb-4">
             <form method="GET" action="users.php" class="row g-2 align-items-center">
                 <div class="col-md-5">
@@ -134,7 +135,7 @@ $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </form>
         </div>
-
+        
         <div class="card card-custom p-0 overflow-hidden border-0 shadow-sm">
             <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                 <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-people-fill me-2"></i>รายชื่อผู้ใช้งานในระบบ</h6>
@@ -208,7 +209,7 @@ $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
-
+    <!-- แสดงข้อมูลจากกดดูข้อมูล user -->
     <div class="modal fade" id="userDetailModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content border-0 shadow">
@@ -298,7 +299,7 @@ $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
         </div>
     </div>
-
+    <!-- แสดงข้อมูลจากกดแก้ไข user -->
     <div class="modal fade" id="editUserModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
@@ -414,7 +415,7 @@ $userList =$stmt->fetchAll(PDO::FETCH_ASSOC);
                             lineBadge.innerHTML = '<span class="badge bg-secondary bg-opacity-10 text-muted border"><i class="bi bi-dash-circle me-1"></i>ยังไม่เคยเชื่อมต่อ LINE OA</span>';
                         }
 
-                        // เติมตารางประวัติการยืม-คืน
+                        // ตารางประวัติการยืม-คืน
                         const tbody = document.getElementById('d_history_tbody');
                         tbody.innerHTML = '';
                         if (!data.history || data.history.length === 0) {

@@ -1,5 +1,5 @@
 <?php
-// user/liff_app.php
+
 session_start();
 require_once __DIR__ . '../../config/db.php';
 require_once __DIR__ . '../../config/settings.php';
@@ -9,6 +9,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// อัปเดตสถานะเกินกำหนด
 try {
     $pdo->exec("UPDATE `transactions` SET `trans_status` = 'overdue' WHERE `trans_status` = 'borrowed' AND `due_time` < NOW()");
 } catch (Exception $e) {}
@@ -16,6 +17,7 @@ try {
 $userId = (int)$_SESSION['user_id'];
 $page = $_GET['page'] ?? 'borrow';
 
+// สร้างไฟล์ เก็บรูป
 $uploadDir = __DIR__ . '/uploads/';
 if (!is_dir($uploadDir)) {
     mkdir($uploadDir, 0777, true);
@@ -75,11 +77,11 @@ $stmtFine = $pdo->prepare("
     GROUP BY u.line_user_id
 ");
 $stmtFine->execute([$userId]);
-$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC);
+$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC); //ดงึข้อมูลทีละ แถว ในรูปแบบ array
 
 if ($fineData && $fineData['total_fine'] > 0) {
     $lineId = $fineData['line_user_id'];
-    $fineAmount = number_format($fineData['total_fine'], 2);
+    $fineAmount = number_format($fineData['total_fine'], 2); //กำหนด ทศนิยม 2 ตำแหน่ง
     
     if ($lineId && !empty(LINE_ACCESS_TOKEN)) {
         $msgText = "⚠️ คุณไม่สามารถทำรายการยืมใหม่ได้!\nเนื่องจากมียอดค่าปรับค้างชำระจำนวน {$fineAmount} บาท\n\nกรุณาชำระเงินโดยส่งรูปสลิปเข้ามาในแชทนี้\nเพื่อปลดล็อกการใช้งานครับ\n\nข้อมูลการชำระเงิน\nธนาคาร: ไทยพาณิชย์\nเลขบัญชี: 8662438582\nชื่อบัญชี: นาย ศุภณัฐ วรฤทธิ์";
@@ -98,7 +100,7 @@ if ($fineData && $fineData['total_fine'] > 0) {
 
 $uStmt = $pdo->prepare("SELECT * FROM `user` WHERE user_id = ? LIMIT 1");
 $uStmt->execute([$userId]);
-$user = $uStmt->fetch() ?: ['full_name' => $_SESSION['full_name'] ?? 'นักศึกษา', 'student_id' => $_SESSION['student_id'] ?? '-'];
+$user = $uStmt->fetch() ?: ['full_name' => $_SESSION['full_name'] ?? 'นักศึกษา', 'student_id' => $_SESSION['student_id'] ?? '-']; //ตรวจสอบข้อมูลในเซสชัน
 
 // 2. จัดการส่งคำขอยืม
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'borrow') {
@@ -107,24 +109,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $dDate = !empty($_POST['due_date']) ? $_POST['due_date'] : date('Y-m-d', strtotime('+3 days'));
     $borrowImage = 'default_borrow.jpg';
 
+    // รับไฟล์รูปที่อัปโหลด
     if (isset($_FILES['borrow_image']) && $_FILES['borrow_image']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['borrow_image']['name'], PATHINFO_EXTENSION);
+        $ext = pathinfo($_FILES['borrow_image']['name'], PATHINFO_EXTENSION); // ดึงแค่นามสกุลไฟล์มาเก็บ
         $newFileName = 'req_borrow_' . time() . '_' . rand(100, 999) . '.' . $ext;
         if (move_uploaded_file($_FILES['borrow_image']['tmp_name'], $uploadDir . $newFileName)) {
-            $borrowImage = $newFileName;
+            $borrowImage = $newFileName; //บ้าบจากที่เก็บในไฟล์ tmp ลง ไฟล์ upload
         }
     }
 
     try {
-        $chk = $pdo->prepare("SELECT status, eq_code FROM `sport_equipment` WHERE eq_id = ? FOR UPDATE");
+        $chk = $pdo->prepare("SELECT status, eq_code FROM `sport_equipment` WHERE eq_id = ? FOR UPDATE"); // ล็อกแถวข้อมูล
         $chk->execute([$eqId]);
         $currEq = $chk->fetch();
 
+        //ดัก error เมื่อมีคนเลือกอุปกรณ์ก่อน
         if (!$currEq || $currEq['status'] !== 'avaliable') {
             alertAndRedirect('error', 'ขออภัย', 'อุปกรณ์ชิ้นนี้ถูกทำรายการไปแล้ว หรือไม่พร้อมใช้งาน', '#d33', 'liff_app.php?page=borrow');
         }
 
-        $pdo->beginTransaction();
+        $pdo->beginTransaction(); // บักทึกข้อมูล เมื่อได้ commit
         $stmt = $pdo->prepare("
             INSERT INTO `transactions` (eq_id, user_id, borrow_time, due_time, borrow_image, trans_status) 
             VALUES (?, ?, NOW(), ?, ?, 'pending_borrow')
@@ -136,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         alertAndRedirect('success', 'สำเร็จ!', 'ส่งคำขอยืมเรียบร้อย กรุณารอเจ้าหน้าที่อนุมัติ', '#0022BA', 'liff_app.php?page=borrow');
     } catch (Exception $e) {
-        $pdo->rollBack();
+        $pdo->rollBack(); // กลับไป beginTransaction เมื่อเกิดปัญหา
         alertAndRedirect('error', 'เกิดข้อผิดพลาด', addslashes($e->getMessage()), '#d33', 'back');
     }
 }
@@ -146,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $transId = (int)$_POST['trans_id'];
     $returnImage = 'default_return.jpg';
 
+    // รับไฟล์รูปที่อัปโหลด
     if (isset($_FILES['return_image']) && $_FILES['return_image']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['return_image']['name'], PATHINFO_EXTENSION);
         $newFileName = 'req_return_' . time() . '_' . rand(100, 999) . '.' . $ext;
@@ -175,8 +180,10 @@ $allEq =$pdo->query("SELECT se.*, sc.category_name FROM `sport_equipment` se LEF
 $groups = [];
 foreach ($allEq as$row) {
     $name =$row['eq_name'];
-    if (!isset($groups[$name])) $groups[$name] = ['eq_name' => $name, 'category_name' =>$row['category_name'] ?? 'ทั่วไป', 'total' => 0, 'items' => []];
-    $groups[$name]['total']++;$groups[$name]['items'][] =$row;
+    if (!isset($groups[$name])) 
+      $groups[$name] = ['eq_name' => $name, 'category_name' =>$row['category_name'] ?? 'ทั่วไป', 'total' => 0, 'items' => []];
+      $groups[$name]['total']++;
+      $groups[$name]['items'][] =$row;
 }
 
 // 5. ดึงรายการกำลังยืม (หน้าคืน) 
@@ -202,9 +209,7 @@ $histStmt =$pdo->prepare("
 $histStmt->execute([$userId]);
 $historyList =$histStmt->fetchAll();
 
-// ==========================================
 // การตั้งค่าตัวแปรวันที่สำหรับ HTML Form
-// ==========================================
 $todayStr = date('Y-m-d'); // วันที่ปัจจุบัน
 $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจจุบัน + 3 วัน
 ?>
@@ -215,10 +220,9 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>ระบบยืม-คืนอุปกรณ์กีฬา PSU</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- เพิ่มไลบรารี SweetAlert2 -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <style>
-      /* ปิดการใช้งานปุ่มเลือกวันที่ๆ ถูก Disable เพื่อไม่ให้ User สับสน */
+      /* ปิดการใช้งานปุ่มเลือกวันที่ๆ ถูก Disable */
       input[type="date"][readonly] {
           background-color: #e5e7eb;
           cursor: not-allowed;
@@ -312,7 +316,7 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีรายการอุปกรณ์ที่ค้างคืนในขณะนี้</div>
         <?php else: ?>
           <?php foreach ($borrowList as$bl): 
-            $isLate = (strtotime(date('Y-m-d H:i:s')) > strtotime($bl['due_time']));
+            $isLate = (strtotime(date('Y-m-d H:i:s')) > strtotime($bl['due_time'])); // ไว้ตรวจสอบวการคืนอุปกรณ์เกินกำหนดเวลา
           ?>
           <div class="return-item p-3 bg-white border border-gray-200 rounded-xl shadow-sm flex justify-between items-center">
             <div>
@@ -360,6 +364,7 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
         <?php if (empty($historyList)): ?>
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีประวัติการทำรายการ</div>
         <?php else: ?>
+          // ตกแต่งกรอบ รายการ
           <?php foreach ($historyList as$h): 
             $isOver = ($h['trans_status'] === 'overdue' || (!empty($h['payment_status']) &&$h['payment_status'] === 'unpaid'));
             $isRet = ($h['trans_status'] === 'returned');
@@ -384,12 +389,14 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
           <div class="hist-card <?= $typeClass ?> <?= $filterCategory ?> border-2 rounded-xl p-3 shadow-sm text-xs relative transition-all duration-200">
             <div class="flex justify-between items-start">
               <div>
+                // แกสดงชื่อ และ รหัส
                 <h4 class="font-bold text-gray-800"><?= htmlspecialchars($h['eq_name']) ?> (<?= htmlspecialchars($h['eq_code']) ?>)</h4>
                 <p class="text-[10px] text-gray-500 mt-0.5">ส่งคำขอ: <?= date('d/m/Y', strtotime($h['borrow_time'])) ?></p>
                 <?php if ($h['return_time']): ?><p class="text-[10px] text-gray-500">คืนเมื่อ: <?= date('d/m/Y', strtotime($h['return_time'])) ?></p><?php endif; ?>
                 <?php if ($isRej && !empty($h['reject_reason'])): ?><p class="text-[10px] text-red-600 font-bold mt-1">เหตุผล: <?= htmlspecialchars($h['reject_reason']) ?></p><?php endif; ?>
                 <?php if ($isOver && !empty($h['fine_price'])): ?><p class="text-xs font-bold text-red-600 mt-1">ค่าปรับ: <?= number_format($h['fine_price'], 0) ?> บาท</p><?php endif; ?>
               </div>
+                // แสดงป้ายสถานะ
               <span class="text-[9px] font-bold px-2 py-0.5 rounded text-white <?= $isPenB || $isPenR ? 'bg-yellow-500' : ($isRej ? 'bg-gray-500' : ($isOver ? 'bg-red-600' : ($isRet ? 'bg-green-600' : 'bg-blue-600'))) ?>">
                 <?php 
                   if ($isPenB) echo "รออนุมัติยืม";
@@ -416,6 +423,7 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
   </div>
 
   <script>
+    // สลับหน้าจอระหว่างแท็บ ยืม,คืน และ ประวัติ
     function navigateTab(tabName) {
       document.querySelectorAll('.tab-view').forEach(el => el.classList.add('hidden'));
       document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
@@ -424,7 +432,7 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
       const titles = { borrow: '📦 ยืมอุปกรณ์กีฬา', return: '🔄 คืนอุปกรณ์', history: '📋 ประวัติ' };
       document.getElementById('app-header-title').innerText = titles[tabName];
     }
-    
+    // เมื่อเปิดดู list ประเภทอุปกรณ์
     function openBorrowSubList(grp) {
       document.getElementById('sub-eq-name').innerText = grp.eq_name;
       const list = document.getElementById('sub-eq-items'); list.innerHTML = '';
@@ -442,31 +450,35 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
       });
       document.getElementById('borrow-step-1').classList.add('hidden'); document.getElementById('borrow-step-2').classList.remove('hidden');
     }
-    
+    // ย้อนไปหน้า เลือกประเภท
     function backToBorrow1() { document.getElementById('borrow-step-2').classList.add('hidden'); document.getElementById('borrow-step-1').classList.remove('hidden'); }
     
+    // เปิดหน้า การยืม 
     function openBorrowConfirm(eqId, name, code) {
       document.getElementById('borrow-form-eq-id').value = eqId;
       document.getElementById('borrow-selected-title').innerHTML = `${name}<br><span class="text-blue-800 font-bold">${code}</span>`;
       document.getElementById('borrow-step-2').classList.add('hidden'); document.getElementById('borrow-step-3').classList.remove('hidden');
     }
     
+    // ย้อนไปหน้า เลือกอุปกรณ์
     function backToBorrow2() { document.getElementById('borrow-step-3').classList.add('hidden'); document.getElementById('borrow-step-2').classList.remove('hidden'); }
     
+    // เปิดหน้า การคืน
     function openReturnConfirm(transId, name, code) {
       document.getElementById('return-form-trans-id').value = transId;
       document.getElementById('return-selected-title').innerHTML = `ยืนยันคืน: ${name}<br><span class="text-blue-800 font-bold">${code}</span>`;
       document.getElementById('return-list-view').classList.add('hidden'); document.getElementById('return-confirm-view').classList.remove('hidden');
     }
     
+    // ปิดหน้า การคืน
     function cancelReturnConfirm() { document.getElementById('return-confirm-view').classList.add('hidden'); document.getElementById('return-list-view').classList.remove('hidden'); }
-    
+    // แสดงชื่อไฟล์รูป ตอนอัพโหลด
     function previewBorrowFile(input) { if (input.files && input.files[0]) document.getElementById('borrow-file-label').innerText = input.files[0].name; }
     function previewReturnFile(input) { if (input.files && input.files[0]) document.getElementById('return-file-label').innerText = input.files[0].name; }
-    
+    // ช่องค้นหา จาก ชื่ออุปกรณ์
     function searchBorrow() { const input = document.getElementById('search-borrow').value.toLowerCase(); document.querySelectorAll('.borrow-group-item').forEach(item => { item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none'; }); }
     function searchReturn() { const input = document.getElementById('search-return').value.toLowerCase(); document.querySelectorAll('.return-item').forEach(item => { item.style.display = item.querySelector('.eq-name-label').innerText.toLowerCase().includes(input) ? 'flex' : 'none'; }); }
-
+    // แสดงการ์ดหน้าประวัติตาม type ที่เลือก  
     function filterHistoryCards(type, btn) {
       document.querySelectorAll('.hist-nav').forEach(b => {
           b.className = "hist-nav py-2.5 text-gray-700 transition-colors";

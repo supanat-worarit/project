@@ -1,5 +1,4 @@
 <?php
-// webhook.php
 require_once 'config/db.php';
 require_once 'config/settings.php'; // โหลด API Keys
 
