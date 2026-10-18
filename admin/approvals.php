@@ -5,6 +5,7 @@ require_once '../config/settings.php';
 
 $admin_id = $_SESSION['admin_id'] ?? 1;
 
+// ฟังก์ชันสำหรับส่ง ข้อความ อย่างเดียว
 function sendLineMessage($to, $text) {
     if (empty(LINE_ACCESS_TOKEN)) return; 
     $post_data = json_encode(['to' => $to, 'messages' => [['type' => 'text', 'text' => $text]]]);
@@ -14,6 +15,26 @@ function sendLineMessage($to, $text) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . LINE_ACCESS_TOKEN]);
     curl_exec($ch); curl_close($ch);
+}
+// ฟังก์ชันสำหรับส่ง ข้อความ + รูปภาพ พร้อมกัน
+function sendLineMessageWithImage($to, $text, $imageUrl) {
+    if (empty(LINE_ACCESS_TOKEN)) return; 
+    
+    $messages = [
+        ['type' => 'text', 'text' => $text],
+        ['type' => 'image', 'originalContentUrl' => $imageUrl, 'previewImageUrl' => $imageUrl]
+    ];
+    
+    $post_data = json_encode(['to' => $to, 'messages' => $messages]);
+    $ch = curl_init('https://api.line.me/v2/bot/message/push');
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . LINE_ACCESS_TOKEN]);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); 
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+    curl_exec($ch); 
+    curl_close($ch);
 }
 
 // 1. จัดการการกด อนุมัติ / ปฏิเสธ (ใช้รหัส trans_id โดยตรง)
@@ -70,10 +91,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     if ($isOverdue) {
                         $daysOver = max(1, ceil((strtotime($now) - strtotime($req['due_time'])) / 86400));
                         $fineAmount = $daysOver * 20.00;
+                        
                         $pdo->prepare("INSERT INTO equipment_fines (trans_id, price, payment_status, slipok_status) VALUES (?, ?, 'unpaid', 'pending')")->execute([$trans_id, $fineAmount]);
-                        $msg .= "\n\n⚠ พบรายการคืนเกินกำหนด!\nกรุณาชำระค่าปรับ\nจำนวน {$fineAmount} บาท \n\nข้อมูลการชำระเงิน\nธนาคาร: ไทยพาณิชย์\nเลขบัญชี: 8662438582\nชื่อบัญชี: นาย ศุภณัฐ วรฤทธิ์\n\nกรุณาส่งรูปสลิปโอนเงิน\nเข้ามาในแชทนี้\nเพื่อปลดล็อกการใช้งานครับ";
-                    }
+                       
+                        // 2. ล็อกยอดเงินและสร้างลิงก์ QR Code อัตโนมัติ
+                        $promptpay_id = PROMPTPAY_ID; // เปลี่ยนเป็นเบอร์โทร หรือ เลขบัตรประชาชนที่ผูกพร้อมเพย์
+                        $formatted_amount = number_format($fineAmount, 2, '.', ''); // แปลงตัวเลขให้ไม่มีลูกน้ำ (เช่น 40.00)
+                        $dynamic_qr_url = "https://promptpay.io/{$promptpay_id}/{$formatted_amount}.png";
+
+                        $msg .= "\n\n⚠ พบรายการคืนเกินกำหนด!\nกรุณาชำระค่าปรับ\nจำนวน {$fineAmount} บาท \n\nข้อมูลการชำระเงิน\nธนาคาร: ไทยพาณิชย์\nเลขบัญชี: 8662438582\nชื่อบัญชี: นาย ศุภณัฐ วรฤทธิ์\n\nหรือ สามารถ แสกน QR_CODE ด้านล่างนี้ได้เลย\n\nกรุณาส่งรูปสลิปโอนเงิน\nเข้ามาในแชทนี้\nเพื่อปลดล็อกการใช้งานครับ";
+                        // ส่ง LINE (ข้อความ + QR Code)
+                        if($lineId) sendLineMessageWithImage($lineId, $msg, $dynamic_qr_url);
+                    }else{
                     if($lineId) sendLineMessage($lineId, $msg);
+                    }
                 }
 
             } elseif ($decision === 'reject') {

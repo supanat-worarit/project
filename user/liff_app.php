@@ -77,23 +77,44 @@ $stmtFine = $pdo->prepare("
     GROUP BY u.line_user_id
 ");
 $stmtFine->execute([$userId]);
-$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC); //ดงึข้อมูลทีละ แถว ในรูปแบบ array
+$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC); //ด7งข้อมูลทีละ แถว ในรูปแบบ array
 
 if ($fineData && $fineData['total_fine'] > 0) {
     $lineId = $fineData['line_user_id'];
     $fineAmount = number_format($fineData['total_fine'], 2); //กำหนด ทศนิยม 2 ตำแหน่ง
     
     if ($lineId && !empty(LINE_ACCESS_TOKEN)) {
-        $msgText = "⚠️ คุณไม่สามารถทำรายการยืมใหม่ได้!\nเนื่องจากมียอดค่าปรับค้างชำระจำนวน {$fineAmount} บาท\n\nกรุณาชำระเงินโดยส่งรูปสลิปเข้ามาในแชทนี้\nเพื่อปลดล็อกการใช้งานครับ\n\nข้อมูลการชำระเงิน\nธนาคาร: ไทยพาณิชย์\nเลขบัญชี: 8662438582\nชื่อบัญชี: นาย ศุภณัฐ วรฤทธิ์";
-        $post_data = json_encode(['to' => $lineId, 'messages' => [['type' => 'text', 'text' => $msgText]]]);
-        
+
+        $fineAmount = $fineData['total_fine'];
+
+        $promptpay_id = PROMPTPAY_ID; // เปลี่ยนเป็นเบอร์โทรที่ผูกพร้อมเพย์
+        $formatted_amount = number_format($fineAmount, 2, '.', '');
+        $dynamic_qr_url = "https://promptpay.io/{$promptpay_id}/{$formatted_amount}.png";
+
+        // ข้อความแจ้งเตือน
+        $msgText = "⚠️ คุณไม่สามารถทำรายการยืมใหม่ได้!\nเนื่องจากมียอดค่าปรับค้างชำระจำนวน {$fineAmount} บาท\n\nกรุณาชำระเงินโดยส่งรูปสลิปเข้ามาในแชทนี้\nเพื่อปลดล็อกการใช้งานครับ\n\nข้อมูลการชำระเงิน\nธนาคาร: ไทยพาณิชย์\nเลขบัญชี: 8662438582\nชื่อบัญชี: นาย ศุภณัฐ วรฤทธิ์\n\nหรือสามารถแสกน QR_CODE ด้านล่างนี้ได้ครับ";
+        // แพ็กข้อมูลใส่ Array (ข้อความ + QR)
+        $messages = [
+            [
+                'type' => 'text',
+                'text' => $msgText
+            ],
+            [
+                'type' => 'image',
+                'originalContentUrl' => $dynamic_qr_url,
+                'previewImageUrl' => $dynamic_qr_url
+            ]
+        ];
+        $post_data = json_encode(['to' => $lineId, 'messages' => $messages]);
         $ch = curl_init('https://api.line.me/v2/bot/message/push');
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . LINE_ACCESS_TOKEN]);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-        curl_exec($ch); curl_close($ch);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0); 
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_exec($ch); 
+        curl_close($ch);
     }
     alertAndRedirect('warning', 'มียอดค้างชำระ!', "คุณมีค่าปรับค้างชำระ {$fineAmount} บาท กรุณาชำระเงินผ่านแชท LINE ก่อนทำรายการ", '#dc3545', 'liff_close');
 }
@@ -212,6 +233,27 @@ $historyList =$histStmt->fetchAll();
 // การตั้งค่าตัวแปรวันที่สำหรับ HTML Form
 $todayStr = date('Y-m-d'); // วันที่ปัจจุบัน
 $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจจุบัน + 3 วัน
+
+// เช็คว่ามีอุปกรณ์ค้างส่งหรือไม่
+$stmtCheckOverdue =$pdo->prepare("
+    SELECT COUNT(*) 
+    FROM `transactions` 
+    WHERE `user_id` = ? 
+    AND (
+        `trans_status` = 'overdue' 
+        OR 
+        (`trans_status` = 'pending_return' AND `due_time` < NOW())
+    )
+");
+$stmtCheckOverdue->execute([$userId]);
+$hasOverdueItems =$stmtCheckOverdue->fetchColumn() > 0;
+
+// เช็คหนี้ค้างชำระ (ใช้ตัวแปร $fineData ที่ดึงไว้แล้วจากด้านบน)
+$hasUnpaidFine = ($fineData && $fineData['total_fine'] > 0);
+
+// สร้างตัวแปร Flag ส่งให้ JavaScript (ถ้ามีค้างส่ง หรือ มีค้างชำระ ให้เป็น true)
+$isUserBlocked = ($hasOverdueItems || $hasUnpaidFine) ? 'true' : 'false';
+
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -364,7 +406,7 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
         <?php if (empty($historyList)): ?>
           <div class="text-center text-gray-400 text-xs py-16">ไม่มีประวัติการทำรายการ</div>
         <?php else: ?>
-          // ตกแต่งกรอบ รายการ
+         <!-- ตกแต่งกรอบ รายการ -->
           <?php foreach ($historyList as$h): 
             $isOver = ($h['trans_status'] === 'overdue' || (!empty($h['payment_status']) &&$h['payment_status'] === 'unpaid'));
             $isRet = ($h['trans_status'] === 'returned');
@@ -389,14 +431,14 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
           <div class="hist-card <?= $typeClass ?> <?= $filterCategory ?> border-2 rounded-xl p-3 shadow-sm text-xs relative transition-all duration-200">
             <div class="flex justify-between items-start">
               <div>
-                // แกสดงชื่อ และ รหัส
+                 <!-- แสดงชื่อ และ รหัส -->
                 <h4 class="font-bold text-gray-800"><?= htmlspecialchars($h['eq_name']) ?> (<?= htmlspecialchars($h['eq_code']) ?>)</h4>
                 <p class="text-[10px] text-gray-500 mt-0.5">ส่งคำขอ: <?= date('d/m/Y', strtotime($h['borrow_time'])) ?></p>
                 <?php if ($h['return_time']): ?><p class="text-[10px] text-gray-500">คืนเมื่อ: <?= date('d/m/Y', strtotime($h['return_time'])) ?></p><?php endif; ?>
                 <?php if ($isRej && !empty($h['reject_reason'])): ?><p class="text-[10px] text-red-600 font-bold mt-1">เหตุผล: <?= htmlspecialchars($h['reject_reason']) ?></p><?php endif; ?>
                 <?php if ($isOver && !empty($h['fine_price'])): ?><p class="text-xs font-bold text-red-600 mt-1">ค่าปรับ: <?= number_format($h['fine_price'], 0) ?> บาท</p><?php endif; ?>
               </div>
-                // แสดงป้ายสถานะ
+                 <!-- แสดงป้ายสถานะ -->
               <span class="text-[9px] font-bold px-2 py-0.5 rounded text-white <?= $isPenB || $isPenR ? 'bg-yellow-500' : ($isRej ? 'bg-gray-500' : ($isOver ? 'bg-red-600' : ($isRet ? 'bg-green-600' : 'bg-blue-600'))) ?>">
                 <?php 
                   if ($isPenB) echo "รออนุมัติยืม";
@@ -433,9 +475,26 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
       document.getElementById('app-header-title').innerText = titles[tabName];
     }
     // เมื่อเปิดดู list ประเภทอุปกรณ์
+    // 1. รับค่าสถานะการบล็อกจาก PHP
+    const isUserBlocked = <?= $isUserBlocked ?>;
+
     function openBorrowSubList(grp) {
+
+      if (isUserBlocked) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'ไม่สามารถทำรายการได้',
+          
+          html: 'มีอุปกรณ์กีฬาเลยกำหนดค้างส่ง <br>กรุณาคืนอุปกรณ์กีฬา ก่อนทำรายการใหม่',
+          confirmButtonText: 'ตกลง',
+          confirmButtonColor: '#d33'
+        });
+        return; // หยุดการทำงานของฟังก์ชันทันที ไม่เปิดหน้าถัดไป
+      }      
+
       document.getElementById('sub-eq-name').innerText = grp.eq_name;
-      const list = document.getElementById('sub-eq-items'); list.innerHTML = '';
+      const list = document.getElementById('sub-eq-items'); 
+      list.innerHTML = '';
       grp.items.forEach(it => {
         const isAvail = (it.status === 'avaliable');
         list.insertAdjacentHTML('beforeend', `
@@ -448,7 +507,8 @@ $maxDueStr = date('Y-m-d', strtotime('+3 days')); // วันที่ปัจ
           </div>
         `);
       });
-      document.getElementById('borrow-step-1').classList.add('hidden'); document.getElementById('borrow-step-2').classList.remove('hidden');
+      document.getElementById('borrow-step-1').classList.add('hidden'); 
+      document.getElementById('borrow-step-2').classList.remove('hidden');
     }
     // ย้อนไปหน้า เลือกประเภท
     function backToBorrow1() { document.getElementById('borrow-step-2').classList.add('hidden'); document.getElementById('borrow-step-1').classList.remove('hidden'); }
