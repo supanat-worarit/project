@@ -77,7 +77,7 @@ $stmtFine = $pdo->prepare("
     GROUP BY u.line_user_id
 ");
 $stmtFine->execute([$userId]);
-$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC); //ด7งข้อมูลทีละ แถว ในรูปแบบ array
+$fineData = $stmtFine->fetch(PDO::FETCH_ASSOC); //ดึงข้อมูลทีละ แถว ในรูปแบบ array
 
 if ($fineData && $fineData['total_fine'] > 0) {
     $lineId = $fineData['line_user_id'];
